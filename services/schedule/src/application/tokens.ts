@@ -1,0 +1,5 @@
+export const SERVICE_CONFIG = Symbol('SERVICE_CONFIG');
+export const DATABASE_PROBE = Symbol('DATABASE_PROBE');
+export const MESSAGE_BROKER_PROBE = Symbol('MESSAGE_BROKER_PROBE');
+export const OUTBOX_EVENT_STORE = Symbol('OUTBOX_EVENT_STORE');
+export const PROCESSED_EVENT_STORE = Symbol('PROCESSED_EVENT_STORE');

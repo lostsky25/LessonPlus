@@ -1,0 +1,241 @@
+name: lessonplus
+
+x-app-image: &app-image
+  image: lessonplus-app:local
+  pull_policy: never
+  init: true
+  stop_grace_period: 20s
+
+services:
+  postgres:
+    image: postgres:17.11
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      SUBSCRIPTIONS_DB_PASSWORD: ${SUBSCRIPTIONS_DB_PASSWORD}
+      SCHEDULE_DB_PASSWORD: ${SCHEDULE_DB_PASSWORD}
+      ATTENDANCE_DB_PASSWORD: ${ATTENDANCE_DB_PASSWORD}
+      TRANSFERS_DB_PASSWORD: ${TRANSFERS_DB_PASSWORD}
+      NOTIFICATIONS_DB_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD}
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - lessonplus-postgres:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:4.2.9-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - '127.0.0.1:5672:5672'
+      - '127.0.0.1:15672:15672'
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  subscriptions:
+    <<: *app-image
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app/services/subscriptions
+    command: ['node', '/app/scripts/start-service.mjs']
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3001'
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      DATABASE_URL: postgresql://subscriptions_user:${SUBSCRIPTIONS_DB_PASSWORD}@postgres:5432/lessonplus?sslmode=disable
+    ports:
+      - '127.0.0.1:3001:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/health/ready').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 40s
+
+  schedule:
+    <<: *app-image
+    working_dir: /app/services/schedule
+    command: ['node', '/app/scripts/start-service.mjs']
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3002'
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      DATABASE_URL: postgresql://schedule_user:${SCHEDULE_DB_PASSWORD}@postgres:5432/lessonplus?sslmode=disable
+    ports:
+      - '127.0.0.1:3002:3002'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3002/health/ready').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 40s
+
+  attendance:
+    <<: *app-image
+    working_dir: /app/services/attendance
+    command: ['node', '/app/scripts/start-service.mjs']
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3003'
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      DATABASE_URL: postgresql://attendance_user:${ATTENDANCE_DB_PASSWORD}@postgres:5432/lessonplus?sslmode=disable
+    ports:
+      - '127.0.0.1:3003:3003'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3003/health/ready').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 40s
+
+  transfers:
+    <<: *app-image
+    working_dir: /app/services/transfers
+    command: ['node', '/app/scripts/start-service.mjs']
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3004'
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      DATABASE_URL: postgresql://transfers_user:${TRANSFERS_DB_PASSWORD}@postgres:5432/lessonplus?sslmode=disable
+    ports:
+      - '127.0.0.1:3004:3004'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3004/health/ready').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 40s
+
+  notifications:
+    <<: *app-image
+    working_dir: /app/services/notifications
+    command: ['node', '/app/scripts/start-service.mjs']
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3005'
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      DATABASE_URL: postgresql://notifications_user:${NOTIFICATIONS_DB_PASSWORD}@postgres:5432/lessonplus?sslmode=disable
+    ports:
+      - '127.0.0.1:3005:3005'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3005/health/ready').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 40s
+
+  api-gateway:
+    <<: *app-image
+    working_dir: /app/apps/api-gateway
+    command: ['node', 'dist/main.js']
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3000'
+      SUBSCRIPTIONS_URL: http://subscriptions:3001
+      SCHEDULE_URL: http://schedule:3002
+      ATTENDANCE_URL: http://attendance:3003
+      TRANSFERS_URL: http://transfers:3004
+      NOTIFICATIONS_URL: http://notifications:3005
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      - subscriptions
+      - schedule
+      - attendance
+      - transfers
+      - notifications
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health/ready').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web:
+    <<: *app-image
+    working_dir: /app/apps/web
+    command:
+      ['pnpm', 'exec', 'vite', 'preview', '--host', '0.0.0.0', '--port', '5173', '--strictPort']
+    environment:
+      API_PROXY_TARGET: http://api-gateway:3000
+    ports:
+      - '127.0.0.1:5173:5173'
+    depends_on:
+      - api-gateway
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:5173/').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  lessonplus-postgres:

@@ -1,0 +1,35 @@
+{
+  "name": "lessonplus",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "env:init": "node scripts/init-env.mjs",
+    "dev": "pnpm db:generate && pnpm --filter @lessonplus/contracts build && pnpm --filter @lessonplus/config build && pnpm --parallel --filter @lessonplus/web --filter @lessonplus/api-gateway --filter @lessonplus/subscriptions --filter @lessonplus/schedule --filter @lessonplus/attendance --filter @lessonplus/transfers --filter @lessonplus/notifications dev",
+    "build": "pnpm db:generate && pnpm --filter @lessonplus/contracts build && pnpm --filter @lessonplus/config build && pnpm --filter @lessonplus/web --filter @lessonplus/api-gateway --filter @lessonplus/subscriptions --filter @lessonplus/schedule --filter @lessonplus/attendance --filter @lessonplus/transfers --filter @lessonplus/notifications build",
+    "lint": "eslint .",
+    "typecheck": "pnpm db:generate && pnpm --filter @lessonplus/contracts build && pnpm --filter @lessonplus/config build && pnpm --filter @lessonplus/contracts exec tsc -p tsconfig.json --noEmit && pnpm --filter @lessonplus/config exec tsc -p tsconfig.json --noEmit && pnpm --filter @lessonplus/web exec tsc -p tsconfig.json --noEmit && pnpm --filter @lessonplus/api-gateway exec tsc -p tsconfig.json --noEmit && pnpm --filter @lessonplus/subscriptions exec tsc -p tsconfig.json --noEmit && pnpm --filter @lessonplus/schedule exec tsc -p tsconfig.json --noEmit && pnpm --filter @lessonplus/attendance exec tsc -p tsconfig.json --noEmit && pnpm --filter @lessonplus/transfers exec tsc -p tsconfig.json --noEmit && pnpm --filter @lessonplus/notifications exec tsc -p tsconfig.json --noEmit",
+    "db:generate": "pnpm --filter @lessonplus/subscriptions --filter @lessonplus/schedule --filter @lessonplus/attendance --filter @lessonplus/transfers --filter @lessonplus/notifications db:generate",
+    "db:migrate": "pnpm --filter @lessonplus/subscriptions --filter @lessonplus/schedule --filter @lessonplus/attendance --filter @lessonplus/transfers --filter @lessonplus/notifications db:migrate",
+    "smoke": "node scripts/smoke.mjs",
+    "run": "node scripts/run.mjs",
+    "push": "node scripts/push.mjs",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --passWithNoTests",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.1",
+    "eslint": "10.12.0",
+    "eslint-config-prettier": "10.1.8",
+    "jest": "30.5.2",
+    "prettier": "3.9.9",
+    "ts-jest": "29.4.14",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1"
+  }
+}

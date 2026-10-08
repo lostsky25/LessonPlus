@@ -1,0 +1,34 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["schedule"]
+}
+
+/// Техническая таблица исходящих событий. Диспетчер публикации ещё не реализован.
+model OutboxEvent {
+  id            String    @id @db.Uuid
+  eventType     String    @map("event_type")
+  schemaVersion Int       @map("schema_version")
+  payload       Json
+  createdAt     DateTime  @map("created_at") @db.Timestamptz(6)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  correlationId String    @map("correlation_id") @db.Uuid
+
+  @@map("outbox_events")
+  @@schema("schedule")
+}
+
+/// Уже обработанные входящие события. Повтор одного идентификатора не создаёт вторую строку.
+model ProcessedEvent {
+  id          String   @id @db.Uuid
+  processedAt DateTime @map("processed_at") @db.Timestamptz(6)
+
+  @@map("processed_events")
+  @@schema("schedule")
+}
