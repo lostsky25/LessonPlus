@@ -1,0 +1,30 @@
+%% C4 Container. Работающие связи каркаса. Один PostgreSQL, пять схем.
+flowchart TB
+  browser["Браузер администратора, преподавателя и родителя"]
+  web["web<br/>apps/web, React и Vite, порт 5173"]
+  gw["api-gateway<br/>apps/api-gateway, NestJS, порт 3000<br/>строки подключения к базам нет"]
+  sub["subscriptions<br/>сервис абонементов, порт 3001"]
+  sch["schedule<br/>сервис расписания, порт 3002"]
+  att["attendance<br/>сервис посещений, порт 3003"]
+  tr["transfers<br/>сервис переносов, порт 3004"]
+  nt["notifications<br/>сервис уведомлений, порт 3005"]
+  mq["rabbitmq<br/>rabbitmq:4.2.9-management<br/>5672 и 15672"]
+  pg["postgres<br/>один экземпляр postgres:17.11<br/>база lessonplus"]
+
+  browser -->|"страница интерфейса"| web
+  web -->|"HTTP /api, proxy Vite на api-gateway:3000"| gw
+  gw -->|"HTTP GET /health/live и /health/ready"| sub
+  gw -->|"HTTP GET /health/live и /health/ready"| sch
+  gw -->|"HTTP GET /health/live и /health/ready"| att
+  gw -->|"HTTP GET /health/live и /health/ready"| tr
+  gw -->|"HTTP GET /health/live и /health/ready"| nt
+  sub -->|"только схема subscriptions, роль subscriptions_user"| pg
+  sch -->|"только схема schedule, роль schedule_user"| pg
+  att -->|"только схема attendance, роль attendance_user"| pg
+  tr -->|"только схема transfers, роль transfers_user"| pg
+  nt -->|"только схема notifications, роль notifications_user"| pg
+  sub -->|"проверка доступности брокера, не публикация событий"| mq
+  sch -->|"проверка доступности брокера, не публикация событий"| mq
+  att -->|"проверка доступности брокера, не публикация событий"| mq
+  tr -->|"проверка доступности брокера, не публикация событий"| mq
+  nt -->|"проверка доступности брокера, не публикация событий"| mq

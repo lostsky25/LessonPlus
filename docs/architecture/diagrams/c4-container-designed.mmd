@@ -1,0 +1,21 @@
+%% C4 Container. Только спроектированные связи. В каркасе этих вызовов и публикаций нет.
+flowchart LR
+  sub["subscriptions<br/>владелец права и ученика"]
+  sch["schedule<br/>владелец занятия, записи и места"]
+  att["attendance<br/>владелец отметки"]
+  tr["transfers<br/>координатор заявки"]
+  nt["notifications<br/>владелец результата доставки<br/>имитация канала"]
+  mq["RabbitMQ<br/>бизнес-события ещё не публикуются"]
+
+  tr -.->|"HTTP: блокировка исходного права и новая привязка"| sub
+  tr -.->|"HTTP: резерв целевого места, подтверждение новой записи, освобождение старого места"| sch
+  att -.->|"событие AttendanceRegistrationRequested: запрос списания"| mq
+  sub -.->|"события права и абонемента"| mq
+  sch -.->|"события занятия, записи и резерва места"| mq
+  tr -.->|"события заявки переноса"| mq
+  nt -.->|"NotificationDelivered и NotificationDeliveryFailed, без отката"| mq
+  mq -.->|"LessonRightConsumed, LessonRightRestored и отмена школой LessonCanceledBySchool"| att
+  mq -.->|"запрос списания AttendanceRegistrationRequested, TransferRequested, отмена школой LessonCanceledBySchool, обычные BookingConfirmed и BookingCanceled"| sub
+  mq -.->|"LessonRightTransferred и TransferRequested"| sch
+  mq -.->|"ход переноса и истечение абонемента"| tr
+  mq -.->|"поручение показать результат, канал внешний не вызывается"| nt
