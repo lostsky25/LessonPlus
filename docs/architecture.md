@@ -10,6 +10,7 @@
 - [C4: контекст и контейнеры](architecture/c4.md)
 - [Взаимодействия и последовательности](architecture/interactions.md)
 - [Владение данными](architecture/storage/01-data-ownership.md)
+- [Хранение и изоляция](architecture/storage/02-storage-and-isolation.md)
 - [Контракты операций](../packages/contracts/openapi/README.md)
 - [Контракты событий](../packages/contracts/events/README.md)
 

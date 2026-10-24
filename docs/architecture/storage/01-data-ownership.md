@@ -6,7 +6,7 @@
 
 Сейчас в каждой схеме только `outbox_events` и `processed_events`. Бизнес-сущности ниже все **проектируются**. Gateway, `@lessonplus/contracts` и `@lessonplus/config` сущностями не владеют.
 
-Владельцы совпадают с [domain.md](../domain.md). Чтение и согласование — с [interactions.md](../interactions.md) и OpenAPI.
+Владельцы совпадают с [domain.md](../domain.md). Чтение и согласование — с [interactions.md](../interactions.md) и OpenAPI. Экземпляр PostgreSQL, роли и проверяемая изоляция схем — в [02-storage-and-isolation.md](02-storage-and-isolation.md).
 
 ## Правила
 
