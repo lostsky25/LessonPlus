@@ -1,6 +1,9 @@
 /**
  * Общий конверт интеграционного события.
- * Поля payload отдельных бизнес-событий будут заданы вместе со сценариями.
+ * Имена полей совпадают с JSON Schema в packages/contracts/events/.
+ * Тип — event_type, версия формата — целое schema_version (поддерживается только 1).
+ * Поля source в конверте нет: издателя выводят eventCatalog и catalog.json.
+ * Форма payload задана схемой; в TypeScript остаётся unknown до сценариев.
  * Идентификаторы — UUID, время — ISO 8601.
  */
 export interface EventEnvelope<TPayload = unknown> {

@@ -1,0 +1,16 @@
+{
+  "event_id": "e0e0e0e0-e0e0-4e0e-8e0e-000000000019",
+  "event_type": "NotificationDelivered",
+  "schema_version": 1,
+  "occurred_at": "2026-10-24T09:01:00Z",
+  "correlation_id": "c0c0c0c0-c0c0-4c0c-8c0c-000000000007",
+  "payload": {
+    "notificationId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "studentId": "11111111-1111-4111-8111-111111111111",
+    "subjectType": "subscription",
+    "subjectId": "33333333-3333-4333-8333-333333333333",
+    "status": "delivered",
+    "channel": "imitation",
+    "recordedAt": "2026-10-24T09:01:00Z"
+  }
+}

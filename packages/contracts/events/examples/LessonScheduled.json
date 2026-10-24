@@ -1,0 +1,16 @@
+{
+  "event_id": "e0e0e0e0-e0e0-4e0e-8e0e-000000000008",
+  "event_type": "LessonScheduled",
+  "schema_version": 1,
+  "occurred_at": "2026-10-24T08:00:00Z",
+  "correlation_id": "c0c0c0c0-c0c0-4c0c-8c0c-000000000004",
+  "payload": {
+    "lessonId": "77777777-7777-4777-8777-777777777777",
+    "groupId": "55555555-5555-4555-8555-555555555555",
+    "teacherId": "66666666-6666-4666-8666-666666666666",
+    "startsAt": "2026-10-24T09:00:00Z",
+    "endsAt": "2026-10-24T10:00:00Z",
+    "capacity": 10,
+    "status": "scheduled"
+  }
+}

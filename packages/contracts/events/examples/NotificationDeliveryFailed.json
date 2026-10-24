@@ -1,0 +1,16 @@
+{
+  "event_id": "e0e0e0e0-e0e0-4e0e-8e0e-000000000020",
+  "event_type": "NotificationDeliveryFailed",
+  "schema_version": 1,
+  "occurred_at": "2026-10-24T10:10:00Z",
+  "correlation_id": "c0c0c0c0-c0c0-4c0c-8c0c-000000000007",
+  "payload": {
+    "notificationId": "d1d1d1d1-d1d1-41d1-81d1-d1d1d1d1d1d1",
+    "studentId": "11111111-1111-4111-8111-111111111111",
+    "subjectType": "transfer",
+    "subjectId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "status": "failed",
+    "channel": "imitation",
+    "recordedAt": "2026-10-24T10:10:00Z"
+  }
+}

@@ -1,0 +1,868 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lessonplus.local/contracts/events/schema/events.schema.json",
+  "title": "LessonPlus business event",
+  "oneOf": [
+    { "$ref": "#/$defs/SubscriptionActivated" },
+    { "$ref": "#/$defs/SubscriptionExpired" },
+    { "$ref": "#/$defs/LessonRightReserved" },
+    { "$ref": "#/$defs/LessonRightReleased" },
+    { "$ref": "#/$defs/LessonRightConsumed" },
+    { "$ref": "#/$defs/LessonRightRestored" },
+    { "$ref": "#/$defs/LessonRightTransferred" },
+    { "$ref": "#/$defs/LessonScheduled" },
+    { "$ref": "#/$defs/LessonCanceledBySchool" },
+    { "$ref": "#/$defs/BookingConfirmed" },
+    { "$ref": "#/$defs/BookingCanceled" },
+    { "$ref": "#/$defs/TransferSeatReserved" },
+    { "$ref": "#/$defs/AttendanceRegistrationRequested" },
+    { "$ref": "#/$defs/AttendanceRecorded" },
+    { "$ref": "#/$defs/AbsenceRecorded" },
+    { "$ref": "#/$defs/TransferRequested" },
+    { "$ref": "#/$defs/TransferCompleted" },
+    { "$ref": "#/$defs/TransferRejected" },
+    { "$ref": "#/$defs/NotificationDelivered" },
+    { "$ref": "#/$defs/NotificationDeliveryFailed" }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "nullableUuid": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Поддерживается только версия 1. Другое число — невалидное сообщение."
+    },
+    "eventName": {
+      "type": "string",
+      "enum": [
+        "SubscriptionActivated",
+        "SubscriptionExpired",
+        "LessonRightReserved",
+        "LessonRightReleased",
+        "LessonRightConsumed",
+        "LessonRightRestored",
+        "LessonRightTransferred",
+        "LessonScheduled",
+        "LessonCanceledBySchool",
+        "BookingConfirmed",
+        "BookingCanceled",
+        "TransferSeatReserved",
+        "AttendanceRegistrationRequested",
+        "AttendanceRecorded",
+        "AbsenceRecorded",
+        "TransferRequested",
+        "TransferCompleted",
+        "TransferRejected",
+        "NotificationDelivered",
+        "NotificationDeliveryFailed"
+      ]
+    },
+    "mark": {
+      "type": "string",
+      "enum": ["presence", "absence"]
+    },
+    "rightStatus": {
+      "type": "string",
+      "enum": ["available", "reserved", "bound", "consumed"]
+    },
+    "seatStatus": {
+      "type": "string",
+      "enum": ["pending", "confirmed", "canceled", "rejected"]
+    },
+    "lessonStatus": {
+      "type": "string",
+      "enum": ["scheduled", "canceled_by_school"]
+    },
+    "subscriptionStatus": {
+      "type": "string",
+      "enum": ["active", "expired"]
+    },
+    "transferStatus": {
+      "type": "string",
+      "enum": ["accepted", "in_progress", "completed", "rejected"]
+    },
+    "rejectionReason": {
+      "type": "string",
+      "enum": [
+        "right_consumed",
+        "right_not_available",
+        "no_free_seat",
+        "notice_period",
+        "transfer_limit",
+        "subscription_expired",
+        "lesson_canceled",
+        "target_is_source"
+      ]
+    },
+    "subjectType": {
+      "type": "string",
+      "enum": ["subscription", "lesson", "booking", "attendance", "transfer"]
+    },
+    "notificationStatus": {
+      "type": "string",
+      "enum": ["delivered", "failed"]
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["imitation"]
+    },
+    "rightEffect": {
+      "type": "string",
+      "enum": ["none", "consume_pending", "consumed", "unspecified"]
+    },
+    "bookingCause": {
+      "type": "string",
+      "enum": ["ordinary", "transfer_source_release"]
+    },
+    "envelope": {
+      "type": "object",
+      "description": "Закрытый конверт версии 1. additionalProperties=false: новое необязательное поле требует schema_version > 1.",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "event_type",
+        "schema_version",
+        "occurred_at",
+        "correlation_id",
+        "payload"
+      ],
+      "properties": {
+        "event_id": { "$ref": "#/$defs/uuid" },
+        "event_type": { "$ref": "#/$defs/eventName" },
+        "schema_version": { "$ref": "#/$defs/schemaVersion" },
+        "occurred_at": { "$ref": "#/$defs/dateTime" },
+        "correlation_id": { "$ref": "#/$defs/uuid" },
+        "payload": { "type": "object" }
+      }
+    },
+    "SubscriptionActivated": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "SubscriptionActivated" },
+            "payload": { "$ref": "#/$defs/SubscriptionActivatedPayload" }
+          }
+        }
+      ]
+    },
+    "SubscriptionActivatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subscriptionId", "studentId", "tariffId", "status", "activatedAt", "expiresAt"],
+      "properties": {
+        "subscriptionId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "tariffId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "active" },
+        "activatedAt": { "$ref": "#/$defs/dateTime" },
+        "expiresAt": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "SubscriptionExpired": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "SubscriptionExpired" },
+            "payload": { "$ref": "#/$defs/SubscriptionExpiredPayload" }
+          }
+        }
+      ]
+    },
+    "SubscriptionExpiredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subscriptionId", "studentId", "tariffId", "status", "expiredAt"],
+      "properties": {
+        "subscriptionId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "tariffId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "expired" },
+        "expiredAt": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "LessonRightReserved": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "LessonRightReserved" },
+            "payload": { "$ref": "#/$defs/LessonRightReservedPayload" }
+          }
+        }
+      ]
+    },
+    "LessonRightReservedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rightId",
+        "subscriptionId",
+        "studentId",
+        "transferId",
+        "reservationId",
+        "sourceBookingId",
+        "status"
+      ],
+      "properties": {
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "subscriptionId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "transferId": { "$ref": "#/$defs/uuid" },
+        "reservationId": { "$ref": "#/$defs/uuid" },
+        "sourceBookingId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "reserved" }
+      }
+    },
+    "LessonRightReleased": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "LessonRightReleased" },
+            "payload": { "$ref": "#/$defs/LessonRightReleasedPayload" }
+          }
+        }
+      ]
+    },
+    "LessonRightReleasedPayload": {
+      "type": "object",
+      "description": "Компенсация до новой привязки. status=bound, reservationStatus=released. Инвариант владельца: bookingId совпадает с sourceBookingId; схема draft-07 равенство полей не проверяет. transferId — заявка переноса, не поле LessonRight.transferId (при bound оно пусто).",
+      "additionalProperties": false,
+      "required": [
+        "rightId",
+        "subscriptionId",
+        "studentId",
+        "transferId",
+        "reservationId",
+        "sourceBookingId",
+        "bookingId",
+        "status",
+        "reservationStatus"
+      ],
+      "properties": {
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "subscriptionId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "transferId": { "$ref": "#/$defs/uuid" },
+        "reservationId": { "$ref": "#/$defs/uuid" },
+        "sourceBookingId": { "$ref": "#/$defs/uuid" },
+        "bookingId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "bound" },
+        "reservationStatus": { "const": "released" }
+      }
+    },
+    "LessonRightConsumed": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "LessonRightConsumed" },
+            "payload": { "$ref": "#/$defs/LessonRightConsumedPayload" }
+          }
+        }
+      ]
+    },
+    "LessonRightConsumedPayload": {
+      "type": "object",
+      "description": "Подтверждение списания присутствия. Устойчивый ключ посещения — (rightId, bookingId). Сверка studentId и lessonId с записью — бизнес-валидация владельца, не JSON Schema. registrationId — операция запроса, не ключ списания.",
+      "additionalProperties": false,
+      "required": [
+        "rightId",
+        "subscriptionId",
+        "studentId",
+        "bookingId",
+        "lessonId",
+        "registrationId",
+        "status",
+        "rightEffect"
+      ],
+      "properties": {
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "subscriptionId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "bookingId": { "$ref": "#/$defs/uuid" },
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "registrationId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "consumed" },
+        "rightEffect": { "const": "consumed" }
+      }
+    },
+    "LessonRightRestored": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "LessonRightRestored" },
+            "payload": { "$ref": "#/$defs/LessonRightRestoredPayload" }
+          }
+        }
+      ]
+    },
+    "LessonRightRestoredPayload": {
+      "type": "object",
+      "description": "Возврат после списания присутствия. status только bound: право снова в остатке и привязано к той же записи. consumedRegistrationId — registrationId исходного LessonRightConsumed, не новый ключ посещения.",
+      "additionalProperties": false,
+      "required": [
+        "rightId",
+        "subscriptionId",
+        "studentId",
+        "bookingId",
+        "lessonId",
+        "consumedRegistrationId",
+        "attendanceCorrectionId",
+        "status"
+      ],
+      "properties": {
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "subscriptionId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "bookingId": { "$ref": "#/$defs/uuid" },
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "consumedRegistrationId": { "$ref": "#/$defs/uuid" },
+        "attendanceCorrectionId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "bound" }
+      }
+    },
+    "LessonRightTransferred": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "LessonRightTransferred" },
+            "payload": { "$ref": "#/$defs/LessonRightTransferredPayload" }
+          }
+        }
+      ]
+    },
+    "LessonRightTransferredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rightId",
+        "subscriptionId",
+        "studentId",
+        "transferId",
+        "reservationId",
+        "sourceBookingId",
+        "targetBookingId",
+        "status"
+      ],
+      "properties": {
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "subscriptionId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "transferId": { "$ref": "#/$defs/uuid" },
+        "reservationId": { "$ref": "#/$defs/uuid" },
+        "sourceBookingId": { "$ref": "#/$defs/uuid" },
+        "targetBookingId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "bound" }
+      }
+    },
+    "LessonScheduled": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "LessonScheduled" },
+            "payload": { "$ref": "#/$defs/LessonScheduledPayload" }
+          }
+        }
+      ]
+    },
+    "LessonScheduledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lessonId",
+        "groupId",
+        "teacherId",
+        "startsAt",
+        "endsAt",
+        "capacity",
+        "status"
+      ],
+      "properties": {
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "groupId": { "$ref": "#/$defs/uuid" },
+        "teacherId": { "$ref": "#/$defs/uuid" },
+        "startsAt": { "$ref": "#/$defs/dateTime" },
+        "endsAt": { "$ref": "#/$defs/dateTime" },
+        "capacity": { "type": "integer", "minimum": 1 },
+        "status": { "const": "scheduled" }
+      }
+    },
+    "LessonCanceledBySchool": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "LessonCanceledBySchool" },
+            "payload": { "$ref": "#/$defs/LessonCanceledBySchoolPayload" }
+          }
+        }
+      ]
+    },
+    "LessonCanceledBySchoolPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lessonId", "groupId", "teacherId", "schoolCancellationId", "status"],
+      "properties": {
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "groupId": { "$ref": "#/$defs/uuid" },
+        "teacherId": { "$ref": "#/$defs/uuid" },
+        "schoolCancellationId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "canceled_by_school" }
+      }
+    },
+    "BookingConfirmed": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "BookingConfirmed" },
+            "payload": { "$ref": "#/$defs/BookingConfirmedPayload" }
+          }
+        }
+      ]
+    },
+    "BookingConfirmedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bookingId", "lessonId", "studentId", "rightId", "transferId", "seatStatus"],
+      "properties": {
+        "bookingId": { "$ref": "#/$defs/uuid" },
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "transferId": { "$ref": "#/$defs/nullableUuid" },
+        "seatStatus": { "const": "confirmed" }
+      }
+    },
+    "BookingCanceled": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "BookingCanceled" },
+            "payload": { "$ref": "#/$defs/BookingCanceledPayload" }
+          }
+        }
+      ]
+    },
+    "BookingCanceledPayload": {
+      "description": "Одно имя, два взаимоисключающих payload. ordinary требует bookingCancellationId и transferId=null. transfer_source_release требует transferId и bookingCancellationId=null.",
+      "oneOf": [
+        { "$ref": "#/$defs/OrdinaryBookingCanceledPayload" },
+        { "$ref": "#/$defs/TransferSourceReleasePayload" }
+      ]
+    },
+    "OrdinaryBookingCanceledPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bookingId",
+        "lessonId",
+        "studentId",
+        "rightId",
+        "transferId",
+        "bookingCancellationId",
+        "cause",
+        "seatStatus"
+      ],
+      "properties": {
+        "bookingId": { "$ref": "#/$defs/uuid" },
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "transferId": { "type": "null" },
+        "bookingCancellationId": { "$ref": "#/$defs/uuid" },
+        "cause": { "const": "ordinary" },
+        "seatStatus": { "const": "canceled" }
+      }
+    },
+    "TransferSourceReleasePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bookingId",
+        "lessonId",
+        "studentId",
+        "rightId",
+        "transferId",
+        "bookingCancellationId",
+        "cause",
+        "seatStatus"
+      ],
+      "properties": {
+        "bookingId": { "$ref": "#/$defs/uuid" },
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "transferId": { "$ref": "#/$defs/uuid" },
+        "bookingCancellationId": { "type": "null" },
+        "cause": { "const": "transfer_source_release" },
+        "seatStatus": { "const": "canceled" }
+      }
+    },
+    "TransferSeatReserved": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "TransferSeatReserved" },
+            "payload": { "$ref": "#/$defs/TransferSeatReservedPayload" }
+          }
+        }
+      ]
+    },
+    "TransferSeatReservedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seatReservationId",
+        "lessonId",
+        "studentId",
+        "rightId",
+        "transferId",
+        "targetBookingId",
+        "status"
+      ],
+      "properties": {
+        "seatReservationId": { "$ref": "#/$defs/uuid" },
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "transferId": { "$ref": "#/$defs/uuid" },
+        "targetBookingId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "active" }
+      }
+    },
+    "AttendanceRegistrationRequested": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "AttendanceRegistrationRequested" },
+            "payload": { "$ref": "#/$defs/AttendanceRegistrationRequestedPayload" }
+          }
+        }
+      ]
+    },
+    "AttendanceRegistrationRequestedPayload": {
+      "type": "object",
+      "description": "Запрос списания. bookingId — устойчивый ключ посещения. registrationId — принятый HTTP-запрос. attendanceId сущности ещё нет (null). Повтор HTTP с другим ключом идемпотентности даёт другой registrationId, но тот же bookingId.",
+      "additionalProperties": false,
+      "required": [
+        "registrationId",
+        "bookingId",
+        "studentId",
+        "lessonId",
+        "rightId",
+        "mark",
+        "attendanceId"
+      ],
+      "properties": {
+        "registrationId": { "$ref": "#/$defs/uuid" },
+        "bookingId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "mark": { "$ref": "#/$defs/mark" },
+        "attendanceId": { "$ref": "#/$defs/nullableUuid" }
+      }
+    },
+    "AttendanceRecorded": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "AttendanceRecorded" },
+            "payload": { "$ref": "#/$defs/AttendanceRecordedPayload" }
+          }
+        }
+      ]
+    },
+    "AttendanceRecordedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attendanceId",
+        "registrationId",
+        "bookingId",
+        "studentId",
+        "lessonId",
+        "rightId",
+        "mark",
+        "status",
+        "rightEffect"
+      ],
+      "properties": {
+        "attendanceId": { "$ref": "#/$defs/uuid" },
+        "registrationId": { "$ref": "#/$defs/uuid" },
+        "bookingId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "mark": { "const": "presence" },
+        "status": { "const": "recorded" },
+        "rightEffect": { "const": "consumed" }
+      }
+    },
+    "AbsenceRecorded": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "AbsenceRecorded" },
+            "payload": { "$ref": "#/$defs/AbsenceRecordedPayload" }
+          }
+        }
+      ]
+    },
+    "AbsenceRecordedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attendanceId",
+        "registrationId",
+        "bookingId",
+        "studentId",
+        "lessonId",
+        "rightId",
+        "mark",
+        "status",
+        "rightEffect"
+      ],
+      "properties": {
+        "attendanceId": { "$ref": "#/$defs/uuid" },
+        "registrationId": { "$ref": "#/$defs/uuid" },
+        "bookingId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "lessonId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "mark": { "const": "absence" },
+        "status": { "const": "absent" },
+        "rightEffect": { "const": "unspecified" }
+      }
+    },
+    "TransferRequested": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "TransferRequested" },
+            "payload": { "$ref": "#/$defs/TransferRequestedPayload" }
+          }
+        }
+      ]
+    },
+    "TransferRequestedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transferId",
+        "studentId",
+        "rightId",
+        "sourceBookingId",
+        "targetLessonId",
+        "targetBookingId",
+        "status"
+      ],
+      "properties": {
+        "transferId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "sourceBookingId": { "$ref": "#/$defs/uuid" },
+        "targetLessonId": { "$ref": "#/$defs/uuid" },
+        "targetBookingId": { "$ref": "#/$defs/nullableUuid" },
+        "status": { "const": "accepted" }
+      }
+    },
+    "TransferCompleted": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "TransferCompleted" },
+            "payload": { "$ref": "#/$defs/TransferCompletedPayload" }
+          }
+        }
+      ]
+    },
+    "TransferCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transferId",
+        "studentId",
+        "rightId",
+        "sourceBookingId",
+        "targetLessonId",
+        "targetBookingId",
+        "status"
+      ],
+      "properties": {
+        "transferId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "sourceBookingId": { "$ref": "#/$defs/uuid" },
+        "targetLessonId": { "$ref": "#/$defs/uuid" },
+        "targetBookingId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "completed" }
+      }
+    },
+    "TransferRejected": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "TransferRejected" },
+            "payload": { "$ref": "#/$defs/TransferRejectedPayload" }
+          }
+        }
+      ]
+    },
+    "TransferRejectedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transferId",
+        "studentId",
+        "rightId",
+        "sourceBookingId",
+        "targetLessonId",
+        "targetBookingId",
+        "status",
+        "rejectionReason"
+      ],
+      "properties": {
+        "transferId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "rightId": { "$ref": "#/$defs/uuid" },
+        "sourceBookingId": { "$ref": "#/$defs/uuid" },
+        "targetLessonId": { "$ref": "#/$defs/uuid" },
+        "targetBookingId": { "$ref": "#/$defs/nullableUuid" },
+        "status": { "const": "rejected" },
+        "rejectionReason": { "$ref": "#/$defs/rejectionReason" }
+      }
+    },
+    "NotificationDelivered": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "NotificationDelivered" },
+            "payload": { "$ref": "#/$defs/NotificationDeliveredPayload" }
+          }
+        }
+      ]
+    },
+    "NotificationDeliveredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "notificationId",
+        "studentId",
+        "subjectType",
+        "subjectId",
+        "status",
+        "channel",
+        "recordedAt"
+      ],
+      "properties": {
+        "notificationId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "subjectType": { "$ref": "#/$defs/subjectType" },
+        "subjectId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "delivered" },
+        "channel": { "$ref": "#/$defs/channel" },
+        "recordedAt": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "NotificationDeliveryFailed": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "type": "object",
+          "required": ["event_type", "payload"],
+          "properties": {
+            "event_type": { "const": "NotificationDeliveryFailed" },
+            "payload": { "$ref": "#/$defs/NotificationDeliveryFailedPayload" }
+          }
+        }
+      ]
+    },
+    "NotificationDeliveryFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "notificationId",
+        "studentId",
+        "subjectType",
+        "subjectId",
+        "status",
+        "channel",
+        "recordedAt"
+      ],
+      "properties": {
+        "notificationId": { "$ref": "#/$defs/uuid" },
+        "studentId": { "$ref": "#/$defs/uuid" },
+        "subjectType": { "$ref": "#/$defs/subjectType" },
+        "subjectId": { "$ref": "#/$defs/uuid" },
+        "status": { "const": "failed" },
+        "channel": { "$ref": "#/$defs/channel" },
+        "recordedAt": { "$ref": "#/$defs/dateTime" }
+      }
+    }
+  }
+}

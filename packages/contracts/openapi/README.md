@@ -16,7 +16,7 @@ OpenAPI 3.0.3 для бизнес-операций до их реализаци�
 | [transfers.yaml](transfers.yaml) | Переносы, порт 3004 |
 | [notifications.yaml](notifications.yaml) | Чтение состояния доставки, порт 3005 |
 
-Поле `payload` у `EventEnvelope` в TypeScript по-прежнему не задано. Входящие события перечислены расширением `x-accepted-events` и не добавляют HTTP-путей.
+Поле `payload` у `EventEnvelope` в TypeScript по-прежнему `unknown`. Форма фактов задана в [../events/README.md](../events/README.md). Входящие события перечислены расширением `x-accepted-events` и не добавляют HTTP-путей.
 
 ## Статус реализации
 

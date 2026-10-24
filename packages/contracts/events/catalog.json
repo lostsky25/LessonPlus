@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "envelope": "EventEnvelope",
+  "implementation_status": "designed",
+  "events": [
+    {
+      "event_type": "SubscriptionActivated",
+      "publisher": "subscriptions",
+      "recipients": ["notifications"],
+      "fact": "Абонемент стал действующим. Активация занятие не списывает.",
+      "expected_changes": "Уведомления сохраняют поручение имитации."
+    },
+    {
+      "event_type": "SubscriptionExpired",
+      "publisher": "subscriptions",
+      "recipients": ["notifications", "transfers"],
+      "fact": "Абонемент завершён.",
+      "expected_changes": "Переносы не принимают новую заявку на его права. Уведомления сохраняют поручение."
+    },
+    {
+      "event_type": "LessonRightReserved",
+      "publisher": "subscriptions",
+      "recipients": ["transfers"],
+      "fact": "Неиспользованное право заблокировано под заявку. Расписание получателем не является.",
+      "expected_changes": "Переносы переходят к резерву целевого места."
+    },
+    {
+      "event_type": "LessonRightReleased",
+      "publisher": "subscriptions",
+      "recipients": ["transfers"],
+      "fact": "Резерв права снят до новой привязки. Само право остаётся bound к исходной записи.",
+      "expected_changes": "Переносы могут завершить компенсацию и отклонить заявку. Исходная запись не теряется."
+    },
+    {
+      "event_type": "LessonRightConsumed",
+      "publisher": "subscriptions",
+      "recipients": ["attendance", "notifications"],
+      "fact": "Право списано. Это подтверждение, не запрос.",
+      "expected_changes": "Посещения фиксируют окончательное посещение. Уведомления сохраняют поручение."
+    },
+    {
+      "event_type": "LessonRightRestored",
+      "publisher": "subscriptions",
+      "recipients": ["attendance", "notifications"],
+      "fact": "Ранее списанное право возвращено в остаток в статусе bound к той же записи.",
+      "expected_changes": "Повтор исправления с другим event_id не возвращает право второй раз: ключ — исходное списание (rightId, bookingId) и consumedRegistrationId. Уведомления сохраняют поручение."
+    },
+    {
+      "event_type": "LessonRightTransferred",
+      "publisher": "subscriptions",
+      "recipients": ["transfers", "schedule"],
+      "fact": "Новая привязка права зафиксирована. Уведомление об итоге заявки — отдельный факт.",
+      "expected_changes": "Переносы доводят заявку до конца. Расписание не даёт истечь целевому резерву этой transferId."
+    },
+    {
+      "event_type": "LessonScheduled",
+      "publisher": "schedule",
+      "recipients": ["notifications"],
+      "fact": "Занятие поставлено в расписание.",
+      "expected_changes": "Уведомления сохраняют поручение."
+    },
+    {
+      "event_type": "LessonCanceledBySchool",
+      "publisher": "schedule",
+      "recipients": ["subscriptions", "transfers", "attendance", "notifications"],
+      "fact": "Занятие отменено школой. Это не completed HTTP-операции отмены.",
+      "expected_changes": "Абонементы сохраняют право. Переносы не расходуют лимит пользователя. Посещения не проводят это как пользовательский перенос."
+    },
+    {
+      "event_type": "BookingConfirmed",
+      "publisher": "schedule",
+      "recipients": ["transfers"],
+      "recipients_when_ordinary": ["transfers", "subscriptions", "notifications"],
+      "fact": "Место подтверждено. Привязку права событие не создаёт, если transferId задан.",
+      "expected_changes": "В переносе координатор — Переносы. Вне переноса Абонементы связывают право с bookingId."
+    },
+    {
+      "event_type": "BookingCanceled",
+      "publisher": "schedule",
+      "recipients_when_ordinary": ["subscriptions", "notifications"],
+      "recipients_when_transfer_source_release": ["transfers"],
+      "fact": "Место записи снято. Смысл задаёт cause, имя события одно.",
+      "expected_changes": "ordinary снимает привязку, только если она ещё на этот bookingId. transfer_source_release новую привязку не снимает."
+    },
+    {
+      "event_type": "TransferSeatReserved",
+      "publisher": "schedule",
+      "recipients": ["transfers"],
+      "fact": "Целевое место удержано, targetBookingId выдан.",
+      "expected_changes": "Переносы переходят к новой привязке права."
+    },
+    {
+      "event_type": "AttendanceRegistrationRequested",
+      "publisher": "attendance",
+      "recipients": ["subscriptions"],
+      "fact": "Запрошено списание. Отметка ещё не окончательная.",
+      "expected_changes": "Абонементы списывают право присутствия один раз на устойчивый ключ посещения (rightId, bookingId) после сверки studentId и lessonId. registrationId — ключ HTTP-операции, не ключ списания. Для absence правило списания не задано."
+    },
+    {
+      "event_type": "AttendanceRecorded",
+      "publisher": "attendance",
+      "recipients": ["notifications"],
+      "fact": "Окончательное посещение после LessonRightConsumed.",
+      "expected_changes": "Уведомления сохраняют поручение."
+    },
+    {
+      "event_type": "AbsenceRecorded",
+      "publisher": "attendance",
+      "recipients": ["notifications"],
+      "fact": "Окончательное отсутствие. Списание правом этот факт не утверждает.",
+      "expected_changes": "Уведомления сохраняют поручение. rightEffect=unspecified."
+    },
+    {
+      "event_type": "TransferRequested",
+      "publisher": "transfers",
+      "recipients": ["schedule", "subscriptions", "notifications"],
+      "fact": "Заявка принята координатором и ещё не выполнена.",
+      "expected_changes": "Блокировка права и резерв места — отдельные HTTP-команды, не это событие."
+    },
+    {
+      "event_type": "TransferCompleted",
+      "publisher": "transfers",
+      "recipients": ["notifications"],
+      "fact": "Заявка завершена после новой привязки, подтверждения записи и освобождения исходного места.",
+      "expected_changes": "Уведомления сохраняют поручение об итоге."
+    },
+    {
+      "event_type": "TransferRejected",
+      "publisher": "transfers",
+      "recipients": ["notifications"],
+      "fact": "Заявка отклонена до новой привязки. Исходное право остаётся неиспользованным.",
+      "expected_changes": "Уведомления сохраняют поручение. Отката абонемента событие не требует."
+    },
+    {
+      "event_type": "NotificationDelivered",
+      "publisher": "notifications",
+      "recipients": [],
+      "fact": "Имитация доставки успешна. Бизнес-получателя нет.",
+      "expected_changes": "Только запись аудита у уведомлений."
+    },
+    {
+      "event_type": "NotificationDeliveryFailed",
+      "publisher": "notifications",
+      "recipients": [],
+      "fact": "Имитация доставки не удалась. Бизнес-получателя нет.",
+      "expected_changes": "Абонемент, запись, посещение и перенос не откатываются."
+    }
+  ]
+}
