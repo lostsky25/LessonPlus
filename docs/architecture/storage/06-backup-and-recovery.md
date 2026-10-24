@@ -444,5 +444,6 @@ ORDER BY 1, 2;
 ## 9. Навигация
 
 - [05-transactions-and-consistency.md](05-transactions-and-consistency.md), [02-storage-and-isolation.md](02-storage-and-isolation.md)
+- [07-scaling.md](07-scaling.md)
 - [interactions.md](../interactions.md)
 - [architecture.md](../../architecture.md)

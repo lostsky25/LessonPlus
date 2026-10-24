@@ -4,7 +4,7 @@
 
 Пароли, URL с паролем и учебные значения из `.env` / `.env.example` в документ не входят. Имена ролей, схем, переменных и образов — из репозитория.
 
-Каталога ADR в репозитории нет; отдельный файл решения не заводился. Проектируемые таблицы и ER — в [03-data-model.md](03-data-model.md); к рабочей базе они не применялись. Показательные SELECT и индексы — [04-queries-and-indexes.md](04-queries-and-indexes.md). Транзакции — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Резервное копирование и восстановление — [06-backup-and-recovery.md](06-backup-and-recovery.md).
+Каталога ADR в репозитории нет; отдельный файл решения не заводился. Проектируемые таблицы и ER — в [03-data-model.md](03-data-model.md); к рабочей базе они не применялись. Показательные SELECT и индексы — [04-queries-and-indexes.md](04-queries-and-indexes.md). Транзакции — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Резервное копирование и восстановление — [06-backup-and-recovery.md](06-backup-and-recovery.md). Масштабирование — [07-scaling.md](07-scaling.md).
 
 Пометки: **существует** — есть в Compose, init, Prisma; **проектируется** — бизнес-таблицы и блокировки сценариев; **не проверено на живой базе** — ожидание по тексту скриптов.
 

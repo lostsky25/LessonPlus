@@ -386,7 +386,7 @@ sequenceDiagram
 
 ## Требования к хранению следующего этапа
 
-Владение данными — [storage/01-data-ownership.md](storage/01-data-ownership.md). Проект таблиц — [storage/03-data-model.md](storage/03-data-model.md). Показательные SELECT и индексы — [storage/04-queries-and-indexes.md](storage/04-queries-and-indexes.md). Транзакции и согласованность — [storage/05-transactions-and-consistency.md](storage/05-transactions-and-consistency.md). Резервное копирование и восстановление — [storage/06-backup-and-recovery.md](storage/06-backup-and-recovery.md). Ниже остаются требования, которые 6.1 не реализовывал; 6.3 фиксирует их как модель, не как миграцию.
+Владение данными — [storage/01-data-ownership.md](storage/01-data-ownership.md). Проект таблиц — [storage/03-data-model.md](storage/03-data-model.md). Показательные SELECT и индексы — [storage/04-queries-and-indexes.md](storage/04-queries-and-indexes.md). Транзакции и согласованность — [storage/05-transactions-and-consistency.md](storage/05-transactions-and-consistency.md). Резервное копирование и восстановление — [storage/06-backup-and-recovery.md](storage/06-backup-and-recovery.md). Масштабирование хранения — [storage/07-scaling.md](storage/07-scaling.md). Ниже остаются требования, которые 6.1 не реализовывал; 6.3 фиксирует их как модель, не как миграцию.
 
 - Ключ идемпотентности HTTP: область (сторона, метод, шаблон пути) отдельно от отпечатка; сохранённый ответ, в том числе после таймаута клиента.
 - Заявка переноса: шаг, `reservationId` права и места, `targetBookingId`, признак **commit привязки** (не «получили 200»), запрет `rejected` после commit. Не запускать компенсацию, пока commit неизвестен.
