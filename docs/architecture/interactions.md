@@ -82,7 +82,7 @@ Gateway опрашивает health сервисов. Сервисы прове�
 | transfers | schedule | Подтверждение новой записи | синхронный запрос | `POST /internal/v1/transfers/{transferId}/booking-confirmations` → `Booking`; факт `BookingConfirmed` с `transferId` | HTTP 5 с | после commit только повтор шага | ключ шага | привязку не создаёт |
 | transfers | schedule | Освобождение исходного места | синхронный запрос | `POST /internal/v1/bookings/{bookingId}/transfer-releases` → `Booking`; факт `BookingCanceled` `cause=transfer_source_release` | HTTP 5 с | повтор шага | ключ шага | новую привязку не снимает. Это не снятие целевого резерва |
 | transfers | subscriptions | Снять блокировку права до commit привязки | синхронный запрос | `POST /internal/v1/rights/{rightId}/reservations/{reservationId}/releases` → `LessonRight` `status=bound`; факт `LessonRightReleased` | HTTP 5 с | ключ шага компенсации | ключ шага | после commit `409 binding_fixed`. Не вызывать, пока commit неизвестен |
-| transfers | schedule | Снять резерв места до commit привязки | синхронный запрос | `POST /internal/v1/seat-reservations/{reservationId}/releases` → `SeatReservation`; отдельного имени факта нет | HTTP 5 с | ключ шага компенсации | ключ шага | нужен `reservationId` из подтверждённого 201. `409 binding_fixed` после commit — требование контракта; обеспечить его до доставки `LessonRightTransferred` — часть незакрытого protection/expiry/release |
+| transfers | schedule | Снять резерв места до commit привязки | синхронный запрос | `POST /internal/v1/seat-reservations/{reservationId}/releases` → `SeatReservation`; отдельного имени факта нет | HTTP 5 с | ключ шага компенсации | ключ шага | `reservationId` из 201. Schedule: advisory(`transferId`) + проекция `compensated_right_releases`; сверка hold по transfer/right/student/target booking (не sourceBookingId/rightReservationId — их нет в seat API). Без проекции — 503 без записи ключа. Та же защита school/cleanup; recovery доводит hold, созданный до terminal |
 
 HTTP списания посещений нет: это событие `AttendanceRegistrationRequested`.
 
@@ -97,10 +97,10 @@ HTTP списания посещений нет: это событие `Attendan
 | subscriptions | notifications | Абонемент действует | событие | `SubscriptionActivated` | 5 ступеней TTL, затем DLQ сервиса | `processed_events` = `event_id` | имитация; абонемент не откатывается |
 | subscriptions | notifications, transfers | Абонемент завершён | событие | `SubscriptionExpired` | те же ступени | `event_id`; переносы не принимают новую заявку | внешний HTTP истечения нет |
 | subscriptions | transfers | Право заблокировано | событие | `LessonRightReserved` | ступени | `event_id`; сам резерв сделал HTTP | `payload.status=reserved`; исходная запись — `sourceBookingId` |
-| subscriptions | transfers | Блокировка снята, запись сохранена | событие | `LessonRightReleased` | ступени | `event_id` | `payload.status=bound`; равенство `bookingId` и `sourceBookingId` проверяет владелец, не схема |
+| subscriptions | transfers, schedule | Блокировка снята, запись сохранена | событие | `LessonRightReleased` | ступени | `event_id` | Schedule: advisory(`transferId`) + проекция+processed; сверка seat по transfer/right/student; `right_reservation_id`/`source_booking_id` — аудит. UNIQUE lifetime reservation на transfer у subscriptions |
 | subscriptions | attendance, notifications | Списание подтверждено | событие | `LessonRightConsumed` | ступени; ранний приход — временная ошибка | `event_id`; списание уже уникально на `(rightId, bookingId)` | посещения фиксируют отметку |
 | subscriptions | attendance, notifications | Право возвращено | событие | `LessonRightRestored` | ступени | `event_id`; возврат один раз на исходное списание | посещения сами право не возвращают |
-| subscriptions | transfers, schedule | Новая привязка зафиксирована | событие | `LessonRightTransferred` | ступени | `event_id` | **не** закрывает окно TTL у schedule; инвариант защиты после commit обязателен, протокол не задан |
+| subscriptions | transfers, schedule | Новая привязка зафиксирована | событие | `LessonRightTransferred` | ступени | `event_id` | наблюдаемость / маркеры у schedule; **не** условие освобождения hold и **не** «барьер TTL». Защита capacity — консервативный hold + Released ([storage/05](storage/05-transactions-and-consistency.md) §4) |
 | schedule | notifications | Занятие создано | событие | `LessonScheduled` | ступени | `event_id` | только имитация |
 | schedule | subscriptions, transfers, attendance, notifications | Отмена школой | событие | `LessonCanceledBySchool` | ступени | `event_id`; право сохранить, лимит не тратить | HTTP-операция может остаться `in_progress` |
 | schedule | transfers; вне переноса ещё subscriptions и notifications | Место подтверждено | событие | `BookingConfirmed` | ступени | `event_id`; при `transferId` привязку не создавать | вне переноса абонементы пытаются связать право; отказ привязки не описан фактом |
@@ -239,7 +239,7 @@ sequenceDiagram
     Sub-->>Tr: 200 LessonRight status=bound
     Sub->>Mq: LessonRightTransferred
   end
-  Note over Sch: событие само по себе окно TTL не закрывает
+  Note over Sch: hold не авто-TTL-release; confirm снимает место штатно
   Tr->>Sch: POST /internal/v1/transfers/{transferId}/booking-confirmations
   Sch->>Mq: BookingConfirmed
   Tr->>Sch: POST /internal/v1/bookings/{bookingId}/transfer-releases
@@ -323,27 +323,33 @@ sequenceDiagram
 
 Потерянный ответ `POST /internal/v1/rights/{rightId}/rebindings` — неопределённый исход. Сначала выясняют результат **тем же** ключом шага. Параллельно вызывать `.../reservations/{reservationId}/releases` или `.../seat-reservations/{reservationId}/releases`, пока commit неизвестен, нельзя: release мог бы снять ещё не зафиксированную блокировку или, наоборот, упереться в уже совершённый commit.
 
-### Гонка защиты резерва места
+### Защита целевого резерва места (протокол 6.5)
 
-Инвариант: после commit привязки целевой резерв **обязан** быть защищён от автоистечения, пока перенос не доведён. Существующие контракты этот инвариант **не закрывают**.
+Инвариант: целевой hold **не** освобождается ни при неизвестном исходе rebind, ни после commit, пока нет доказанного безопасного пути. Подробности — [storage/05-transactions-and-consistency.md](storage/05-transactions-and-consistency.md) §4.
 
-`LessonRightTransferred` публикуется из outbox **после** commit. Пока факт не применён в «Расписании», TTL целевого резерва может истечь. Опасный запоздалый вызов именно `POST /internal/v1/seat-reservations/{reservationId}/releases`: он снимает **целевой** резерв и может прийти до получения `LessonRightTransferred`. `POST /internal/v1/bookings/{bookingId}/transfer-releases` — другой шаг, освобождение **исходного** места; эту гонку им не подменяют. Expiry целевого резерва возможен и **до**, и **во время** `rebindings`, если срок кончился, пока координатор ещё не получил подтверждённый commit.
-
-Протокол согласования protection / expiry / release между commit у subscriptions и расписанием — **нерешённый барьер реализации**. Новых маршрутов и 21-го события здесь нет. Нельзя считать, что доставка `LessonRightTransferred` уже даёт гарантию, и нельзя рисовать безусловное «резерв не истекает».
+- Авто-TTL **не** −1: `expires_at` — диагностика; recovery — периодический обход незавершённых transfers (SELECT 6.4), не вымышленный outbox/HTTP wake.
+- `LessonRightTransferred` **не** барьер освобождения.
+- Advisory(`transferId`) у consumer Released и seat create/compensate; затем lessons→дети. Гонка: reserve→terminal ⇒ hold компенсируется (recovery обязан); terminal→reserve ⇒ 409.
+- Проекция `compensated_right_releases`; сверка hold по transfer/right/student/target booking; reservation/source в проекции — аудит (не поля `ReserveSeatRequest`).
+- Без проекции → 503 без записи ключа; нет Released ≠ commit. Только `converted` → `binding_fixed`.
+- Штатный съём после commit — confirm (`hold_kind=none`).
+- Межсервисный HTTP restore у subscriptions в OpenAPI **нет**; локальный алгоритм restore — storage/05 §3.7.
 
 ### Восстановление после сбоя
 
 | Сторона границы | Сбой | Что делать |
 | ---------------- | ---- | ---------- |
 | До commit, «Переносы» | Таймаут `POST /internal/v1/rights/{rightId}/reservations` | Повторить **тот же** ключ шага. Сохранённый 201 даёт `reservationId`. Новый ключ не создавать |
-| До commit, «Абонементы» | Резерв есть (`reserved`), координатор умер | «Переносы» читают свою заявку и либо продолжают, либо компенсируют известным `reservationId` |
+| До commit, «Абонементы» | Резерв есть (`reserved`), координатор умер | «Переносы» читают свою заявку и либо продолжают, либо компенсируют известным `reservationId` (right, затем seat после Released) |
 | До commit, «Расписание» | Подтверждённый `409 no_free_seat` | Резерва места нет. Снять резерв права, `TransferRejected`. Release места не вызывать |
-| До commit, «Расписание» | Таймаут `POST /internal/v1/lessons/{lessonId}/seat-reservations` | Резерв **мог** быть создан. Повторить тот же ключ, получить `reservationId`. Только затем при подтверждённом отказе или решении компенсировать — `POST /internal/v1/seat-reservations/{reservationId}/releases` |
+| До commit, «Расписание» | Таймаут `POST /internal/v1/lessons/{lessonId}/seat-reservations` | Резерв **мог** быть создан. Повторить тот же ключ, получить `reservationId`. Только затем при подтверждённом отказе или решении компенсировать — right release, потом seat release |
 | До commit, «Переносы» | Потерян ответ `rebindings` | Только повтор того же ключа `POST /internal/v1/rights/{rightId}/rebindings`. Release параллельно не запускать |
-| После commit, «Абонементы» | Координатор умер | Привязка уже на `targetBookingId`. `TransferRejected` запрещён. Доведение HTTP-шагов |
+| После commit, «Абонементы» | Координатор умер | Привязка уже на `targetBookingId`. `TransferRejected` запрещён. Доведение HTTP-шагов; durable claim воркера — 05 §5 |
 | После commit, «Расписание» | Не подтверждена новая запись | Повтор `POST /internal/v1/transfers/{transferId}/booking-confirmations` |
 | После commit, «Расписание» | Не освобождён источник | Повтор `POST /internal/v1/bookings/{bookingId}/transfer-releases` |
-| После commit, «Расписание» | TTL резерва до применения защиты | Инвариант нарушен, пока нет протокола protection/expiry/release |
+| После commit / unknown, «Расписание» | Наступил `expires_at` | Счётчики **не** менять; диагностика; обход незавершённых transfers → replay/confirm, **не** compensate |
+| До commit, «Расписание» | Seat release, проекции Released ещё нет | **503** без записи ключа; повтор того же ключа после Released |
+| До/после, «Расписание» | School/cleanup хочет −1 active transfer seat | Только при проекции §4.3; иначе запрет |
 | После commit, «Переносы» | Не опубликован `TransferCompleted` | Outbox, когда шаги доведения отражены в заявке |
 
 Глобального лимита «шесть обработок» нет. Пять TTL-ступеней — запланированный отложенный повтор события, не счётчик HTTP-шагов.
@@ -360,32 +366,32 @@ sequenceDiagram
 
 ## Отмена школой и уведомления
 
-Право сохраняет «Абонементы» по `LessonCanceledBySchool`. Лимит не тратит «Переносы». Результат операции не зависит от `NotificationDeliveryFailed`.
+Право сохраняет «Абонементы» по `LessonCanceledBySchool` (проекция `subscriptions.canceled_lessons`, без consume). Лимит не тратит «Переносы». Локальная сериализация cancel-проекции и consume — advisory по `lessonId` (05 §6); недоставленное событие из schedule ещё не запрещает удалённый consume — честный предел. `preserved`/`completed` без сигнала не заявлять. Имитация уведомлений: только `next_attempt_no` под FOR UPDATE (05 §5.4).
 
 ## Нерешённые вопросы
 
 Зафиксированы в OpenAPI и здесь не закрываются новым событием или маршрутом:
 
-1. Как «Расписание» узнаёт `rightEffect` и `transferLimitEffect` для `completed` отмены школой, не читая чужие таблицы. Имен фактов для этих флагов нет.
-2. Как владелец обычной отмены записи узнаёт `rightBindingEffect`.
+1. Как «Расписание» узнаёт `rightEffect` и `transferLimitEffect` для `completed` отмены школой, не читая чужие таблицы. Имен фактов для этих флагов нет; без сигнала оставлять `pending` / не `completed`.
+2. Как владелец обычной отмены записи узнаёт `rightBindingEffect` (то же: не завершать только по seat).
 3. Списывает ли отсутствие право.
 4. Обещает ли исправление присутствия на отсутствие `LessonRightRestored`.
 5. Кто переводит абонемент в `expired` (таймер владельца, внешнего метода нет).
-6. Срок хранения `Idempotency-Key` и срок истечения резерва места **до** commit привязки.
-7. Нет факта «списание отклонено». Если право `reserved` под перенос, повтор `AttendanceRegistrationRequested` — временная ошибка. После пяти ступеней сообщение в DLQ, хотя `AttendanceRegistration` допускает `failureReason=right_conflict`.
+6. Канал `idempotency-forget` к владельцам внутренних ключей (проект 05; в OpenAPI v1 нет) — до него внутренние recovery-ключи **не** удаляются автоматически (30d недостаточно).
+7. Нет факта «списание отклонено». `available`/ожидание bind и `reserved` — retryable (rollback без processed). Permanent (bound к другому booking и т.п.) — processed без consume; attendance **не** узнаёт permanent по тишине/чужой DLQ и не auto-reject.
 8. Обычная запись: `BookingConfirmed` (`transferId=null`) может подтвердить место, а привязка права затем отклониться. Согласование отказа привязки и освобождения занятого места без чтения чужой БД контрактами не задано. Успешная запись требует подтверждённой привязки.
-9. **Барьер реализации:** протокол protection / expiry / release целевого резерва относительно commit `rebindings`. `LessonRightTransferred` и HTTP 200 окно TTL не закрывают. Новых путей и событий этот документ не вводит.
+9. ~~Протокол protection/TTL целевого hold~~ — закрыт в [storage/05](storage/05-transactions-and-consistency.md) §4 (консервативный hold + Released → schedule).
 
-Сверка маршрутов: семь внутренних путей OpenAPI перечислены полностью; списание — событие, не HTTP; `BookingCanceled` различает `ordinary` и `transfer_source_release`. Издатели и получатели совпадают с `catalog.json`. Payload статусов — с JSON Schema (`reserved` на резерве права, `bound` на release/transfer).
+Сверка маршрутов: семь внутренних путей OpenAPI перечислены полностью; списание — событие, не HTTP; `BookingCanceled` различает `ordinary` и `transfer_source_release`. Издатели и получатели совпадают с `catalog.json` (в т.ч. `LessonRightReleased` → transfers, schedule). Payload статусов — с JSON Schema (`reserved` на резерве права, `bound` на release/transfer).
 
 ## Требования к хранению следующего этапа
 
-Владение данными — [storage/01-data-ownership.md](storage/01-data-ownership.md). Проект таблиц — [storage/03-data-model.md](storage/03-data-model.md). Показательные SELECT и индексы — [storage/04-queries-and-indexes.md](storage/04-queries-and-indexes.md). Ниже остаются требования, которые 6.1 не реализовывал; 6.3 фиксирует их как модель, не как миграцию.
+Владение данными — [storage/01-data-ownership.md](storage/01-data-ownership.md). Проект таблиц — [storage/03-data-model.md](storage/03-data-model.md). Показательные SELECT и индексы — [storage/04-queries-and-indexes.md](storage/04-queries-and-indexes.md). Транзакции и согласованность — [storage/05-transactions-and-consistency.md](storage/05-transactions-and-consistency.md). Ниже остаются требования, которые 6.1 не реализовывал; 6.3 фиксирует их как модель, не как миграцию.
 
 - Ключ идемпотентности HTTP: область (сторона, метод, шаблон пути) отдельно от отпечатка; сохранённый ответ, в том числе после таймаута клиента.
 - Заявка переноса: шаг, `reservationId` права и места, `targetBookingId`, признак **commit привязки** (не «получили 200»), запрет `rejected` после commit. Не запускать компенсацию, пока commit неизвестен.
 - Право: статусы `available|reserved|bound|consumed`; при `reserved` исходная запись в `sourceBookingId`; блокировка против одновременных резерва и списания; уникальность списания `(rightId, bookingId)`.
-- Место: вместимость = confirmed + active reserves; срок TTL **до** commit; после commit инвариант защиты обязателен, а механизм (как freeze expiry согласуется с subscriptions) остаётся барьером — не закладывать «событие уже защитило».
+- Место: вместимость = confirmed + active reserves; strict `< capacity` только на новый +1; confirm существующего hold при полной сумме проходит. Transfer-hold: авто-TTL не −1; seat release только после локального `LessonRightReleased` или штатный confirm — [storage/05](storage/05-transactions-and-consistency.md).
 - Посещение: `registrationId` отдельно от `attendanceId`; одна окончательная отметка на `bookingId`.
 - Outbox: колонки конверта плюс `published_at`; `processed_events.id = event_id`.
 - Уведомление: без каскада откатов.

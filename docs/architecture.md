@@ -13,6 +13,7 @@
 - [Хранение и изоляция](architecture/storage/02-storage-and-isolation.md)
 - [Модель данных](architecture/storage/03-data-model.md)
 - [Запросы и индексы](architecture/storage/04-queries-and-indexes.md)
+- [Транзакции и согласованность](architecture/storage/05-transactions-and-consistency.md)
 - [Контракты операций](../packages/contracts/openapi/README.md)
 - [Контракты событий](../packages/contracts/events/README.md)
 
@@ -60,6 +61,6 @@
 
 - **Transactional outbox.** Таблицы `outbox_events` и `processed_events` уже создаются. Порты записи и учёта обработанных идентификаторов есть. Диспетчер, который публикует строки outbox в RabbitMQ, на этом этапе не запускается.
 - **Идемпотентность потребителей.** Уникальный идентификатор в `processed_events` подготовлен для того, чтобы повтор доставки не выполнял сценарий второй раз. Самих потребителей бизнес-событий нет.
-- **Saga переноса.** Перенос затрагивает subscriptions, schedule и transfers. Порядок шагов, граница commit и гонка TTL описаны в [architecture/interactions.md](architecture/interactions.md) как проект, без движка. Сейчас заявка на перенос не создаётся и событие списания не публикуется.
+- **Saga переноса.** Перенос затрагивает subscriptions, schedule и transfers. Порядок шагов, граница commit и протокол защиты целевого hold (без авто-TTL-release) — [architecture/interactions.md](architecture/interactions.md) и [architecture/storage/05-transactions-and-consistency.md](architecture/storage/05-transactions-and-consistency.md); без движка в коде. Сейчас заявка на перенос не создаётся и событие списания не публикуется.
 
 Каталог имён событий лежит в `@lessonplus/contracts`. Форма `payload` задана JSON Schema в `packages/contracts/events/`; публикация и потребители по-прежнему не запущены.

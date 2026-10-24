@@ -24,6 +24,9 @@ erDiagram
     timestamptz binding_committed_at
     text current_step
     text status
+    text claim_owner
+    timestamptz claim_until
+    bigint claim_generation
   }
   transfer_outbound_steps {
     uuid id PK

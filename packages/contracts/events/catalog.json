@@ -27,9 +27,9 @@
     {
       "event_type": "LessonRightReleased",
       "publisher": "subscriptions",
-      "recipients": ["transfers"],
+      "recipients": ["transfers", "schedule"],
       "fact": "Резерв права снят до новой привязки. Само право остаётся bound к исходной записи.",
-      "expected_changes": "Переносы могут завершить компенсацию и отклонить заявку. Исходная запись не теряется."
+      "expected_changes": "Переносы могут завершить компенсацию и отклонить заявку. Расписание принимает факт как обязательное условие безопасного освобождения целевого transfer-hold (см. storage/05). Исходная запись не теряется."
     },
     {
       "event_type": "LessonRightConsumed",

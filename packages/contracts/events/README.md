@@ -65,7 +65,8 @@ Payload использует camelCase идентификаторов OpenAPI (`
 | subscriptions | `LessonCanceledBySchool` | `event_id` | Право не списывать повторно и не уничтожать |
 | subscriptions | `TransferRequested` | `event_id` | Саму блокировку делает HTTP, не это событие |
 | schedule | `TransferRequested` | `event_id` | Резерв места — отдельный HTTP-шаг |
-| schedule | `LessonRightTransferred` | `event_id` | Узнать о commit привязки. Защита резерва от TTL этим фактом не гарантирована |
+| schedule | `LessonRightTransferred` | `event_id` | Узнать о commit привязки / маркеры; освобождение hold этим фактом не разрешается (см. storage/05 §4) |
+| schedule | `LessonRightReleased` | `event_id` | Проекция `compensated_right_releases`; условие безопасного seat release |
 | attendance | `LessonRightConsumed` | `event_id` | Одна окончательная отметка на `bookingId`; `attendanceId` выдаётся этой сущности |
 | attendance | `LessonRightRestored` | `event_id` | Исправление учитывает возврат права; само восстановление не делает |
 | attendance | `LessonCanceledBySchool` | `event_id` | Не проводить как пользовательский перенос |
@@ -134,7 +135,7 @@ Payload использует camelCase идентификаторов OpenAPI (`
 
 Статусы в событиях — подмножество enum OpenAPI, не свободные строки.
 
-`LessonRightReleased` — компенсация до новой привязки. Право не становится `available`: исходная неиспользованная привязка сохраняется, `status=bound`, `bookingId` должен совпадать с `sourceBookingId`. `reservationStatus=released` совпадает с `RightReservation`. Поле `transferId` в событии — заявка переноса; у сущности `LessonRight` при `bound` поле `transferId` пусто.
+`LessonRightReleased` — компенсация до новой привязки. Право не становится `available`: исходная неиспользованная привязка сохраняется, `status=bound`, `bookingId` должен совпадать с `sourceBookingId`. `reservationStatus=released` совпадает с `RightReservation`. Поле `transferId` в v1 **обязательно**. Получатели: `transfers` и `schedule`. Schedule пишет durable `compensated_right_releases` атомарно с `processed_events` и сверяет кортеж с hold перед любым −1 (storage/05 §4.3).
 
 `LessonRightRestored` — возврат после списания присутствия. Допустимый `status` только `bound` (право снова в остатке, `bookingId` задан, как в OpenAPI). `consumed` и `reserved` противоречат возврату.
 

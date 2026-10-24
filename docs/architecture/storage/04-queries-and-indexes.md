@@ -1,6 +1,6 @@
 # Запросы и индексы
 
-Шаг 6.4 архитектуры хранения. Таблицы и имена колонок — [03-data-model.md](03-data-model.md) и [ddl/](ddl/). Владение — [01-data-ownership.md](01-data-ownership.md). Списки API — [openapi/README.md](../../../packages/contracts/openapi/README.md). Карта вызовов — [interactions.md](../interactions.md).
+Шаг 6.4 архитектуры хранения. Таблицы и имена колонок — [03-data-model.md](03-data-model.md) и [ddl/](ddl/). Владение — [01-data-ownership.md](01-data-ownership.md). Транзакции и блокировки записи — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Списки API — [openapi/README.md](../../../packages/contracts/openapi/README.md). Карта вызовов — [interactions.md](../interactions.md).
 
 Пометки: **существует** — `outbox_events`, `processed_events` в рабочей базе; **проектируется** — бизнес-таблицы 6.3, пять SELECT и индексы этого документа. SQL **не** выполнять на рабочей базе. Prisma-миграций нет. Планы и время **не измерены**.
 
@@ -12,7 +12,7 @@
 
 ## Снимок свободных мест
 
-`freeSeatCount` = `lessons.capacity − confirmed_booking_count − active_reserve_count` на **строке занятия в момент чтения**. Это не удержание места и не успешная конкурентная запись. OpenAPI: прочитанный `freeSeatCount` гонку не закрывает (`409 capacity_exceeded`). Защита записи — шаг 6.5 о транзакциях.
+`freeSeatCount` = `lessons.capacity − confirmed_booking_count − active_reserve_count` на **строке занятия в момент чтения**. Это не удержание места и не успешная конкурентная запись. OpenAPI: прочитанный `freeSeatCount` гонку не закрывает (`409 capacity_exceeded`). Защита записи — [05-transactions-and-consistency.md](05-transactions-and-consistency.md).
 
 Чтение права `available` (запрос 1) тоже не резервирует его.
 
@@ -280,7 +280,7 @@ JOIN шага покрыт UNIQUE `(transfer_id, step)`; попытки — UNIQ
 
 Исчерпавшие `max_attempts` остаются `failed` для разбора и **не** попадают в выборку. Пример проектного значения `max_attempts = 3` — **не** пятиступенчатый TTL RabbitMQ из [events README](../../../packages/contracts/events/README.md): то политика доставки **событий** (`event_id`, DLQ), этот SELECT про имитацию канала `imitation`.
 
-Предпосылка `max_attempts`: `attempt_no` — последовательный счётчик **фактических** попыток **одного** уведомления (1, 2, … без дыр и без второго ряда с тем же номером). CHECK `attempt_no >= 1` и UNIQUE `(notification_id, attempt_no)` это **не** обеспечивают: не запрещают пропуск номера и не атомарны с отправкой. Порядок выдачи номера и запись попытки — алгоритм 6.5. Пока он не задан, сравнение `COALESCE(last.attempt_no, 0) < max_attempts` имеет смысл только при этой предпосылке.
+Алгоритм `attempt_no` (единственный, 6.5 §5.4): после `FOR UPDATE` строки notification проверить `next_attempt_no <= max_attempts` и backoff; `attempt_no := next_attempt_no`; imitation in-process; в одной TX — INSERT attempt (`delivered`|`failed`) + `next_attempt_no = attempt_no + 1` + `notifications.status` (+ outbox). Инвариант: `next_attempt_no = COALESCE(MAX(attempt_no),0)+1`; rollback номер не сжигает. Альтернатив MAX+1 без колонки / `in_progress` нет. Реальная внешняя доставка не выполняется; exactly-once канала не утверждается.
 
 Колонки `next_attempt_at` в 6.3 нет. `$1`/`$2` — параметры запроса, не предикат индекса и не `now()`.
 
@@ -517,4 +517,4 @@ EXECUTE q5(
 7. Сортировка прав и записей по `id` при `created_at` у строки — открытый пункт 6.3; индексы следуют контракту.
 8. `current_step` в ddl без CHECK по именам шагов и без значения `done`; 6.4 на `done` не опирается.
 
-Следующий шаг: транзакции, захват воркерами и блокировки записи (6.5), не индексы чтения.
+Транзакции, захват воркерами и блокировки записи — [05-transactions-and-consistency.md](05-transactions-and-consistency.md).

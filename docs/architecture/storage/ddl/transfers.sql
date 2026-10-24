@@ -27,7 +27,14 @@ CREATE TABLE transfers.transfers (
     current_step text NOT NULL,
     status text NOT NULL CHECK (status IN ('accepted', 'in_progress', 'completed', 'rejected')),
     rejection_reason text,
+    claim_owner text,
+    claim_until timestamptz(6),
+    claim_generation bigint NOT NULL DEFAULT 0 CHECK (claim_generation >= 0),
     created_at timestamptz(6) NOT NULL,
+    CHECK (
+        (claim_owner IS NULL AND claim_until IS NULL)
+        OR (claim_owner IS NOT NULL AND claim_until IS NOT NULL)
+    ),
     CHECK ((status = 'rejected') = (rejection_reason IS NOT NULL)),
     CHECK (status <> 'rejected' OR binding_knowledge IN ('unattempted', 'owner_rejected')),
     CHECK (

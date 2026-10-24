@@ -8,6 +8,11 @@ erDiagram
   lesson_rights ||--o{ right_reservations : "резервы"
   lesson_rights ||--o{ right_operations : "журнал"
   right_operations |o--o| right_operations : "consumed_operation_id nullable"
+  canceled_lessons {
+    uuid lesson_id PK
+    uuid school_cancellation_id
+    timestamptz canceled_at
+  }
   students {
     uuid id PK
     text display_name
@@ -41,7 +46,7 @@ erDiagram
   right_reservations {
     uuid id PK
     uuid right_id FK
-    uuid transfer_id "логич."
+    uuid transfer_id UK "логич.; lifetime UNIQUE"
     uuid source_booking_id "логич."
     text status
     text close_reason

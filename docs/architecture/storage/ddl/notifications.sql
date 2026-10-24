@@ -13,6 +13,7 @@ CREATE TABLE notifications.notifications (
     status text NOT NULL CHECK (status IN ('pending', 'delivered', 'failed')),
     channel text NOT NULL CHECK (channel = 'imitation'),
     recorded_at timestamptz(6) NOT NULL,
+    next_attempt_no integer NOT NULL DEFAULT 1 CHECK (next_attempt_no >= 1),
     UNIQUE (source_event_id, student_id, channel)
 );
 

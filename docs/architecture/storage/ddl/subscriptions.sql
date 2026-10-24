@@ -83,6 +83,10 @@ CREATE UNIQUE INDEX right_reservations_one_active_per_right
     ON subscriptions.right_reservations (right_id)
     WHERE status = 'active';
 
+-- Не более одного жизненного резерва права на transfer (Released нельзя переиспользовать).
+CREATE UNIQUE INDEX right_reservations_one_lifetime_per_transfer
+    ON subscriptions.right_reservations (transfer_id);
+
 CREATE TABLE subscriptions.right_operations (
     id uuid PRIMARY KEY,
     right_id uuid NOT NULL REFERENCES subscriptions.lesson_rights (id),
@@ -132,6 +136,13 @@ CREATE UNIQUE INDEX right_operations_consume_once
 CREATE UNIQUE INDEX right_operations_restore_once_per_consume
     ON subscriptions.right_operations (consumed_operation_id)
     WHERE kind = 'restored';
+
+-- Проекция LessonCanceledBySchool: блокирует consume по lesson_id без чужого SQL.
+CREATE TABLE subscriptions.canceled_lessons (
+    lesson_id uuid PRIMARY KEY,
+    school_cancellation_id uuid NOT NULL,
+    canceled_at timestamptz(6) NOT NULL
+);
 
 CREATE TABLE subscriptions.http_idempotency_keys (
     id uuid PRIMARY KEY,

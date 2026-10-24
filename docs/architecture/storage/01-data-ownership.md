@@ -6,7 +6,7 @@
 
 Сейчас в каждой схеме только `outbox_events` и `processed_events`. Бизнес-сущности ниже все **проектируются**. Gateway, `@lessonplus/contracts` и `@lessonplus/config` сущностями не владеют.
 
-Владельцы совпадают с [domain.md](../domain.md). Чтение и согласование — с [interactions.md](../interactions.md) и OpenAPI. Экземпляр PostgreSQL, роли и проверяемая изоляция схем — в [02-storage-and-isolation.md](02-storage-and-isolation.md). Проектируемые таблицы — в [03-data-model.md](03-data-model.md). Показательные SELECT и индексы — в [04-queries-and-indexes.md](04-queries-and-indexes.md).
+Владельцы совпадают с [domain.md](../domain.md). Чтение и согласование — с [interactions.md](../interactions.md) и OpenAPI. Экземпляр PostgreSQL, роли и проверяемая изоляция схем — в [02-storage-and-isolation.md](02-storage-and-isolation.md). Проектируемые таблицы — в [03-data-model.md](03-data-model.md). Показательные SELECT и индексы — в [04-queries-and-indexes.md](04-queries-and-indexes.md). Транзакции и согласованность — в [05-transactions-and-consistency.md](05-transactions-and-consistency.md).
 
 ## Правила
 
@@ -147,7 +147,7 @@
 | Внешние идентификаторы | `reservationId` места, `targetBookingId`, `transferId`, `lessonId`, `studentId`, `rightId` |
 | Локальные проекции | У заявки — `reservationId` места и `targetBookingId` для повтора шагов |
 
-Резерв места и резерв права — разные удержания. После commit привязки целевой резерв обязан не истекать; доставка `LessonRightTransferred` окно TTL не закрывает.
+Резерв места и резерв права — разные удержания. После commit целевой hold не освобождается авто-TTL и не school/cleanup −1 без проекции `compensated_right_releases`. `LessonRightTransferred` не условие освобождения. Протокол — [05-transactions-and-consistency.md](05-transactions-and-consistency.md) §4.
 
 ### Отметка посещения и исправление
 
@@ -246,7 +246,7 @@
 | Переносы координируют | Заявка и состояние процесса, не остаток и не вместимость |
 | Посещения инициируют списание событием | Нет HTTP-клиента attendance → subscriptions |
 | Уведомления независимы | Нет каскадного отката |
-| `LessonRightTransferred` не закрывает TTL | Владелец места остаётся schedule; протокол protection/expiry/release не закрыт |
+| `LessonRightTransferred` не освобождает hold | Владелец места — schedule; −1 hold только при `compensated_right_releases`+сверке или confirm (05 §4) |
 
 Новых маршрутов и 21-го события здесь нет.
 
@@ -276,7 +276,7 @@
 5. Как «Переносы» применяют параметры лимита и срока уведомления тарифа, не читая схему абонементов и не расширяя payload версии 1.
 6. Протокол protection / expiry / release целевого резерва после commit `rebindings`.
 7. Обычная запись: место confirmed, привязка отклонена — освобождение места.
-8. Срок хранения `Idempotency-Key` и TTL резерва места **до** commit.
+8. Forget внутренних Idempotency-Key (OpenAPI v1 нет) — до него ключи не auto-delete; авто-TTL seat не −1 — 05.
 9. Создание ученика, тарифа, преподавателя и группы, связь учётной записи с `studentId`.
 10. Нет факта «списание отклонено».
 11. Как потребитель, не читающий схему абонементов, подтверждает существование карточки ученика: Student GET и события ученика в контрактах нет; совпадение `studentId` у права карточку не заменяет.

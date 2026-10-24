@@ -35,7 +35,7 @@ sequenceDiagram
     Sub->>Mq: LessonRightTransferred
   end
 
-  Note over Sch: доставка события не закрывает окно TTL до применения защиты
+  Note over Sch: hold без авто-TTL-release; confirm снимает место штатно
   Tr->>Sch: POST /internal/v1/transfers/{transferId}/booking-confirmations
   Sch-->>Tr: 200 Booking seatStatus=confirmed
   Sch->>Mq: BookingConfirmed transferId задан

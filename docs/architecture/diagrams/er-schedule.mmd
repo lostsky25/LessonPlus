@@ -10,6 +10,15 @@ erDiagram
   lessons ||--o{ school_cancellations : "отмены школой"
   bookings ||--o{ booking_cancellations : "обычные отмены"
   bookings ||--o{ seat_reservations : "target_booking_id NOT NULL"
+  compensated_right_releases {
+    uuid event_id PK
+    uuid transfer_id UK
+    uuid right_id
+    uuid student_id
+    uuid right_reservation_id UK
+    uuid source_booking_id
+    timestamptz processed_at
+  }
   teachers {
     uuid id PK
     text display_name
@@ -48,6 +57,7 @@ erDiagram
     uuid transfer_id "логич."
     text status
     timestamptz expires_at
+    text ttl_action
     boolean binding_protected
     timestamptz created_at
     timestamptz released_at

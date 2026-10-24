@@ -57,6 +57,9 @@ CREATE TABLE schedule.seat_reservations (
     target_booking_id uuid NOT NULL,
     status text NOT NULL CHECK (status IN ('active', 'released')),
     expires_at timestamptz(6) NOT NULL,
+    -- Авто-TTL не освобождает место: только будит recovery (см. 05-transactions).
+    ttl_action text NOT NULL DEFAULT 'wake_recovery'
+        CHECK (ttl_action = 'wake_recovery'),
     binding_protected boolean NOT NULL DEFAULT false,
     created_at timestamptz(6) NOT NULL,
     released_at timestamptz(6),
@@ -75,6 +78,20 @@ CREATE UNIQUE INDEX seat_reservations_one_active_per_transfer
 CREATE UNIQUE INDEX seat_reservations_one_active_per_booking
     ON schedule.seat_reservations (target_booking_id)
     WHERE status = 'active';
+
+-- Проекция LessonRightReleased: processed_events не ищет по transferId.
+-- Заполняется атомарно с processed_events; условие безопасного seat release (05 §4.3).
+CREATE TABLE schedule.compensated_right_releases (
+    event_id uuid PRIMARY KEY,
+    transfer_id uuid NOT NULL,
+    right_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    right_reservation_id uuid NOT NULL,
+    source_booking_id uuid NOT NULL,
+    processed_at timestamptz(6) NOT NULL,
+    UNIQUE (transfer_id),
+    UNIQUE (right_reservation_id)
+);
 
 CREATE TABLE schedule.school_cancellations (
     id uuid PRIMARY KEY,

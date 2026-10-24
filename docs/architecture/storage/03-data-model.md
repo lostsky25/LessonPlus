@@ -1,6 +1,6 @@
 # Модель данных
 
-Шаг 6.3 архитектуры хранения. Владение — [01-data-ownership.md](01-data-ownership.md), изоляция — [02-storage-and-isolation.md](02-storage-and-isolation.md), запросы и индексы — [04-queries-and-indexes.md](04-queries-and-indexes.md). Этот документ проектирует таблицы; **не** является миграцией и **не** применяется к рабочей базе.
+Шаг 6.3 архитектуры хранения. Владение — [01-data-ownership.md](01-data-ownership.md), изоляция — [02-storage-and-isolation.md](02-storage-and-isolation.md), запросы и индексы — [04-queries-and-indexes.md](04-queries-and-indexes.md), транзакции — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Этот документ проектирует таблицы; **не** является миграцией и **не** применяется к рабочей базе.
 
 Пометки: **существует** — уже в Prisma/`20261007120000_init`; **проектируется** — только здесь, в ER и в [ddl/](ddl/).
 
@@ -97,7 +97,7 @@ Self-FK `consumed_operation_id` **nullable**: NULL у всех `kind`, кром�
 | `active` → `released` в той же TX, что rebind | право → `bound` к target, журнал `rebound` | `converted` | `LessonRightTransferred`, **не** Released |
 | HTTP release после rebind (`converted` или право уже на target) | без изменения агрегата | без изменения | `409 state_conflict` / `binding_fixed` по [subscriptions.yaml](../../../packages/contracts/openapi/subscriptions.yaml) |
 
-Терминальность: `released` конечен. Вторая `active` на то же право запрещена индексом. Идемпотентный 200 относится **только** к повтору ключа компенсации при `close_reason = compensated`, не к любому `released`.
+Терминальность: `released` конечен. Вторая `active` на то же право запрещена индексом. **UNIQUE (`transfer_id`)** на всей истории: не больше одного жизненного резерва права на transfer — Released нельзя переиспользовать для нового reserve/rebind того же transfer. Идемпотентный 200 относится **только** к повтору ключа компенсации при `close_reason = compensated`, не к любому `released`.
 
 ### Запись `bookings.seat_status` и `hold_kind`
 
@@ -105,7 +105,8 @@ Self-FK `consumed_operation_id` **nullable**: NULL у всех `kind`, кром�
 | -- | - | ---- |
 | (нет) | `pending` | принят POST записи (`hold_kind = ordinary_pending`) или создан `targetBookingId` при резерве места (`hold_kind = covered_by_seat_reservation`) |
 | `pending` | `confirmed` | `BookingConfirmed` (ordinary или с `transferId`); `hold_kind → none` |
-| `pending` | `rejected` | отказ доведения **до** commit, включая компенсацию/expiry целевого hold; `hold_kind → none` |
+| `pending` | `rejected` | **только** компенсация / отказ доведения переноса до commit (seat release по §4); `hold_kind → none` |
+| `pending` | `canceled` | ordinary cancel записи в `ordinary_pending` (не путать с `rejected`) |
 | `confirmed` | `canceled` | `BookingCanceled` ordinary **или** `transfer_source_release` |
 
 `ordinary_pending` занимает `active_reserve_count`. Целевой `pending`, уже покрытый `seat_reservations` `active`, **не** даёт второй +1: его `hold_kind = covered_by_seat_reservation`, счётчик увеличивает только транзакция резерва места.
@@ -114,16 +115,16 @@ Self-FK `consumed_operation_id` **nullable**: NULL у всех `kind`, кром�
 
 | Переход | TX на занятии (`FOR UPDATE`) | Timestamps | Событие |
 | ------- | ---------------------------- | ---------- | ------- |
-| INSERT `active` + booking `pending` | `active_reserve_count += 1` **один раз** | `created_at`; `released_at` NULL; `expires_at` задан; `binding_protected = false` | `TransferSeatReserved` |
-| Повтор HTTP того же ключа владельца | нет второй `active` на `transfer_id` / `target_booking_id` | без изменения | тот же `targetBookingId` |
-| `active` → `released` компенсация **до** commit | booking `pending` → `rejected`, `hold_kind → none`, `active_reserve_count -= 1` **один раз** | `released_at = now()` | отдельного факта каталога нет |
-| expiry **до** commit, тот же эффект, что компенсация | то же −1, чтобы место не осталось занятым | `released_at` | нет |
-| `active` → `released` после confirm | booking `pending` → `confirmed`, `hold_kind → none`, `active_reserve_count -= 1`, `confirmed_booking_count += 1` | `released_at` | `BookingConfirmed` |
-| HTTP release после commit | **запрещён** контрактом (`409 binding_fixed`) | без изменения | нет |
+| INSERT `active` + booking `pending` | `active_reserve_count += 1` **один раз** | `expires_at` задан; `ttl_action=wake_recovery`; `binding_protected=false` | `TransferSeatReserved` |
+| Повтор HTTP того же ключа владельца | нет второй `active` | без изменения | тот же `targetBookingId` |
+| `active` → `released` компенсация | только при строке `compensated_right_releases` + сверка кортежа с hold (§4.3); −1; booking **`rejected`** | `released_at` | нет имени факта release |
+| `expires_at` наступил | счётчики **не** менять; диагностика / обход transfers 6.4 | без `released` | — |
+| `active` → `released` после confirm | −1 reserve +1 confirmed; booking `hold_kind=none` | `released_at` | `BookingConfirmed` |
+| HTTP release без проекции | **503** без записи idempotency (не terminal 409) | без изменения | — |
+| School/cleanup release без проекции | **запрещён** (та же защита §4) | без изменения | — |
+| Seat reserve при существующей проекции того же `transfer_id` | отказ 409; новый hold не создавать | — | — |
 
-Место не освобождается дважды: компенсация и expiry — взаимоисключающие терминальные пути одной `active` строки; повторный release идемпотентен по `released`. Счётчик не декрементируют отдельно «за pending» и «за reservation».
-
-После commit целевой hold обязан оставаться занятым, пока не confirm. Колонка `binding_protected` — желаемая защёлка, **не** решённый протокол: кто и по какому сигналу ставит её в `true`, как expiry узнаёт о commit subscriptions, TTL до commit — **открытый барьер**. Доставка `LessonRightTransferred` окно TTL сама не закрывает. Локальный boolean CHECK / DEFAULT **не** доказывает, что удалённый commit состоялся.
+Авто-TTL **не** освобождает место. Проекция Released — `compensated_right_releases`, не поиск по `processed_events`. `LessonRightTransferred` не барьер освобождения.
 
 ### Перенос `transfers.status` и `binding_knowledge`
 
@@ -159,7 +160,7 @@ CHECK: `rejected` несовместим с `outcome_unknown`/`committed`. Эт�
 
 `owner_rejected` **не** ставят по 401/403, по `409 idempotency_key_reused` после таймаута и не по «любому 4xx». Такой ответ **не** доказывает отсутствие прежнего commit и **не** понижает `committed` / `outcome_unknown`. Компенсация после него запрещена, пока знание не `unattempted` или подтверждённый бизнес-отказ исходного запроса.
 
-Защита целевого hold между commit subscriptions и получением ответа/события координатором — **открытый барьер**, не закрытый локальным флагом заявки.
+Защита целевого hold между commit subscriptions и ответом/событием координатору — **не** локальный флаг заявки: протокол schedule (`ttl_action=wake_recovery` + seat release только после `LessonRightReleased`) — [05](05-transactions-and-consistency.md) §4.
 
 ## Таблицы по сервисам
 
@@ -175,9 +176,10 @@ CHECK: `rejected` несовместим с `outcome_unknown`/`committed`. Эт�
 | `tariffs` | Параметры продукта | `id` | `lesson_count ≥ 1`, `validity_days ≥ 1`, `transfer_limit ≥ 0`, `notice_period_hours ≥ 0` | — |
 | `subscriptions` | Договор | `id` | `student_id` FK, `tariff_id` FK, `status` active\|expired, `activated_at`, `expires_at` | `expires_at > activated_at`; UNIQUE `(id, student_id)` для составного FK права |
 | `lesson_rights` | Единица остатка | `id` | `subscription_id`+`student_id` составной FK на абонемент, `status`, `booking_id` логич., `transfer_id` логич., `created_at` | CHECK статус↔поля; UNIQUE bound `booking_id`; UNIQUE reserved `transfer_id` |
-| `right_reservations` | Резерв права под перенос | `id` | `right_id` FK, `transfer_id` логич., `source_booking_id` логич., `status` active\|released, `close_reason` compensated\|converted, `created_at`, `released_at` | один active на `right_id`; ветка `released`: `released_at IS NOT NULL` **и** `close_reason IS NOT NULL` (одного `IN (...)` мало: CHECK в PostgreSQL пропускает UNKNOWN) |
+| `right_reservations` | Резерв права под перенос | `id` | `right_id` FK, `transfer_id` логич., `source_booking_id` логич., `status` active\|released, `close_reason` compensated\|converted, `created_at`, `released_at` | один active на `right_id`; **UNIQUE lifetime `transfer_id`**; ветка `released`: `released_at` **и** `close_reason` оба NOT NULL |
 | `right_operations` | Durable-журнал; публичного GET нет | `id` | `kind`, статусы, `booking_id`/`lesson_id`/`registration_id`, `consumed_operation_id` FK, `attendance_correction_id` логич., `event_id` | CHECK обязательности по kind; UNIQUE consume `(right_id, booking_id)`; UNIQUE restore по `consumed_operation_id` |
-| `http_idempotency_keys` | Входящие POST этого сервиса (активация, внутренние reservations/releases/rebindings) | `id` | область + ключ + отпечаток + сохранённый ответ | UNIQUE области ключа |
+| `canceled_lessons` | Проекция `LessonCanceledBySchool` | `lesson_id` | `school_cancellation_id`, `canceled_at` | блокирует consume; сериализация с consume — [05](05-transactions-and-consistency.md) §6 |
+| `http_idempotency_keys` | Входящие POST; внутренние recovery-ключи **не** auto-delete (05 §5.2) | `id` | область + ключ + отпечаток + сохранённый ответ | UNIQUE области ключа |
 
 `Subscription.balance` API **не** хранится: это `COUNT(*)` прав в `available|reserved|bound`. Отрицательным не бывает, потому что прав не удаляют ниже нуля и алгоритм consume только из `bound`.
 
@@ -193,7 +195,8 @@ CHECK: `rejected` несовместим с `outcome_unknown`/`committed`. Эт�
 | `groups` | Группа | `id` | `teacher_id` FK, `name` | — |
 | `lessons` | Проведение и вместимость | `id` | `group_id` FK, `teacher_id` FK, `starts_at`/`ends_at`, `capacity ≥ 1`, счётчики, `status` | `ends_at > starts_at`; CHECK **на той же строке** `confirmed + active_reserve <= capacity` |
 | `bookings` | Место ученика | `id` | `lesson_id` FK, `student_id`/`right_id` логич., `transfer_id` логич. NULL, `seat_status`, `hold_kind`, `created_at` | UNIQUE `(id, lesson_id, student_id, right_id)` для составного FK резерва |
-| `seat_reservations` | Резерв места переноса | `id` | `target_booking_id`+урок+ученик+право **составной FK NOT NULL**, `transfer_id` логич., `expires_at`, `binding_protected` DEFAULT false, `status`, `created_at`, `released_at` | один active на `transfer_id` и на `target_booking_id` (частично; исторические `released` допустимы) |
+| `seat_reservations` | Резерв места переноса | `id` | составной FK на booking, `transfer_id` логич., `expires_at`, `ttl_action='wake_recovery'`, `binding_protected`, `status`, timestamps | один active на `transfer_id` / `target_booking_id`; release — [05](05-transactions-and-consistency.md) §4 |
+| `compensated_right_releases` | Durable проекция `LessonRightReleased` | `event_id` | `transfer_id` UK, `right_id`, `student_id`, `right_reservation_id` UK, `source_booking_id`, `processed_at` | атомарно с `processed_events` под advisory(`transferId`); сверка hold по transfer/right/student/target booking; reservation/source — аудит |
 | `school_cancellations` | Операция 202 | `id` | эффекты `pending`…, `status` | `completed` только при canceled+preserved+not_spent |
 | `booking_cancellations` | Обычная отмена | `id` | `seat_effect`, `right_binding_effect` | сигнал чужой привязки **открыт** |
 | `http_idempotency_keys` | входящие POST этого сервиса (занятия, записи, seat-reservations, confirm, transfer-releases) | `id` | | |
@@ -242,7 +245,7 @@ CHECK: `rejected` несовместим с `outcome_unknown`/`committed`. Эт�
 | Таблица | Назначение | PK | Главные поля | UNIQUE / CHECK / FK |
 | ------- | ---------- | -- | ------------ | ------------------- |
 | `transfer_rules` | Параметры координатора | `id` | `notice_period_hours`; `school_cancel_spends_user_limit` DEFAULT false **и** CHECK `NOT school_cancel_spends_user_limit` | CHECK кодирует принятый инвариант; сам DEFAULT запрет траты **не** гарантирует |
-| `transfers` | Заявка и знание координатора | `id` | `rule_id` FK, логич. student/right/source/target, id резервов, `binding_knowledge`, `binding_committed_at`, `current_step`, `status` | `rejected` только при unattempted/owner_rejected; `completed` ⇒ committed и `target_booking_id` |
+| `transfers` | Заявка и знание координатора | `id` | `rule_id` FK, логич. ссылки, `binding_knowledge`, `current_step`, `status`, **`claim_owner`/`claim_until`/`claim_generation≥0`** + CHECK парности claim | `rejected` только unattempted/owner_rejected; `completed` ⇒ committed + target; fencing — [05](05-transactions-and-consistency.md) §5.3 |
 | `transfer_outbound_steps` | Воспроизводимый исходящий вызов шага | `id` | `transfer_id` FK, `step`, `owner_service`, **`actor_kind`/`actor_id`**, method/path/`path_params`/`request_body`, `idempotency_key`, `fingerprint` | UNIQUE `(transfer_id, step)`; UNIQUE ключа в заявке |
 | `transfer_outbound_attempts` | Исход попытки | `id` | `step_id` FK, `attempt_no ≥ 1`, `outcome`, HTTP статус/тело NULL | UNIQUE `(step_id, attempt_no)` |
 | `http_idempotency_keys` | **только** входящий `POST /v1/transfers` | `id` | | |
@@ -255,8 +258,8 @@ CHECK: `rejected` несовместим с `outcome_unknown`/`committed`. Эт�
 
 | Таблица | Назначение | PK | Главные поля | UNIQUE / CHECK / FK |
 | ------- | ---------- | -- | ------------ | ------------------- |
-| `notifications` | Поручение имитации **одному** ученику | `id` | `student_id` логич., `subject_type`/`subject_id` логич., `source_event_id`, `status`, `channel = imitation`, `recorded_at` | UNIQUE `(source_event_id, student_id, channel)` |
-| `notification_delivery_attempts` | Попытки канала | `id` | `notification_id` FK, `attempt_no ≥ 1`, `result` delivered\|failed | UNIQUE `(notification_id, attempt_no)` |
+| `notifications` | Поручение имитации **одному** ученику | `id` | логич. student/subject, `source_event_id`, `status`, `channel=imitation`, `recorded_at`, **`next_attempt_no`** (6.5) | UNIQUE `(source_event_id, student_id, channel)`; инвариант `next_attempt_no = MAX(attempt_no)+1` |
+| `notification_delivery_attempts` | Попытки канала | `id` | `notification_id` FK, `attempt_no ≥ 1`, `result` delivered\|failed | UNIQUE `(notification_id, attempt_no)`; без `in_progress` |
 
 Один факт на занятие без `studentId` (`LessonCanceledBySchool`, также `LessonScheduled`) порождает **несколько** поручений: по строке на каждого адресата. Дедуп поручения — тройка `(source_event_id, student_id, channel)`; канал принят только `imitation`. Повторная доставка **того же события** по-прежнему идёт через `processed_events`: один `event_id` → одна TX, в ней N INSERT поручений.
 
@@ -287,7 +290,7 @@ CHECK: `rejected` несовместим с `outcome_unknown`/`committed`. Эт�
 | Одна действующая привязка | CHECK полей статуса; UNIQUE `booking_id` where bound | Ordinary bind и rebind меняют одну строку права в TX с outbox |
 | Перенос vs списание | UNIQUE active `right_reservations` на `right_id`; статус `reserved` исключает `bound` | Блокировка строки права; `409 right_consumed` / конфликт reserve |
 | Вместимость | CHECK **на строке занятия**: сумма счётчиков ≤ `capacity` | `FOR UPDATE` занятия; ±1 в той же TX. Ordinary pending и transfer hold не двойного счёта (`hold_kind`) |
-| TTL / protection целевого hold после commit | колонка `expires_at`, `binding_protected` | Протокол **открыт**. DEFAULT false / boolean CHECK не равны «commit состоялся» |
+| TTL / protection целевого hold | `expires_at` + `ttl_action=wake_recovery` (не −1); `binding_protected` наблюдаемость | Авто-TTL не освобождает; seat release только после локального `LessonRightReleased` или confirm — [05](05-transactions-and-consistency.md) §4. `LessonRightTransferred` не барьер освобождения |
 | Commit vs rejected | CHECK `rejected` только при unattempted/owner_rejected | При `outcome_unknown` не compensate и не reject; повтор того же исходящего ключа rebind |
 | Отмена школой сохраняет право и не тратит лимит | нет FK на право; CHECK `NOT school_cancel_spends_user_limit` | Обработчик `LessonCanceledBySchool` в subscriptions не consume и не delete; в transfers не увеличивает usage. DEFAULT колонки — не эта гарантия |
 | Идемпотентность входящего HTTP | UNIQUE области ключа у **владельца endpoint** | Сравнение отпечатка; таймаут клиента ≠ отсутствие эффекта |
@@ -334,24 +337,24 @@ CHECK: `rejected` несовместим с `outcome_unknown`/`committed`. Эт�
 | `TransferCompleted` / `TransferRejected` | status, knowledge | CHECK knowledge; outbox | лимит тарифа координатор не читает SQL и не имеет поля v1 |
 | `Notification` / Delivered / Failed | studentId, channel=imitation, source event | `notifications` + attempts | факты без studentId: маршрутизация не покрыта контрактами v1 |
 
-Модель **не** добавляет 21-е событие, не закрывает списание отсутствия и не объявляет protection-протокол решённым.
+Модель **не** добавляет 21-е событие и не закрывает списание отсутствия. Протокол целевого hold — [05](05-transactions-and-consistency.md) §4 (согласовано с ddl/`ttl_action`, recipients Released).
 
 ## Что существует, что проектируется, что открыто
 
 **Существует:** `outbox_events`, `processed_events` в пяти схемах (структура init).
 
-**Проектируется:** все таблицы `ddl/*.sql`, ER, состояния резервов, `close_reason`, журнал consume/restore, `transfer_outbound_steps`/`_attempts` с actor, `binding_knowledge`, поручения `(event, student, channel)`, снимки применённой корректировки, составные FK локальной сверки, счётчики занятия и `hold_kind`.
+**Проектируется:** все таблицы `ddl/*.sql`, ER, состояния резервов, `close_reason`, журнал consume/restore, `transfer_outbound_steps`/`_attempts` с actor, `binding_knowledge`, поручения `(event, student, channel)`, снимки применённой корректировки, составные FK локальной сверки, счётчики занятия и `hold_kind`; плюс 6.5: `ttl_action`, `compensated_right_releases`, `claim_*`+CHECK, `next_attempt_no`, `canceled_lessons` в subscriptions.
 
-**Открыто (не закрыто 6.3):**
+**Открыто (не закрыто моделью 6.3 / частично закрыто 6.5):**
 
 - таймер `expired` абонемента;
-- TTL входящего Idempotency-Key;
-- TTL резерва места **до** commit и протокол protection/expiry/release **после** commit (открытый барьер целевого hold);
+- канал forget внутренних Idempotency-Key (до него внутренние ключи **не** auto-delete, см. 05 §5.2);
 - ordinary `BookingConfirmed` затем отказ bind и освобождение уже занятого места;
 - правило списания за `absence` и restore-on-absence;
 - лимит/срок тарифа для transfers без чужого SQL и без нового payload v1;
 - Student GET; связь JWT с `studentId`;
-- факт отказа списания (`consume-rejected`);
-- согласование ordinary pending со счётчиками и формулой OpenAPI;
+- факт отказа списания (`consume-rejected`); attendance не выводит permanent из тишины;
+- транспорт correction→restore (HTTP restore / `RestoreRightRequest` в OpenAPI v1 нет);
+- завершение school/ordinary cancel `completed` по чужим эффектам без сигнала;
 - как notifications узнаёт адресатов факта без `studentId` через HTTP владельца (контракт v1 маршрутизацию полностью не покрывает);
 - сортировка списков API по `id` vs `created_at`.
