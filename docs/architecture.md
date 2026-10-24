@@ -14,6 +14,7 @@
 - [Модель данных](architecture/storage/03-data-model.md)
 - [Запросы и индексы](architecture/storage/04-queries-and-indexes.md)
 - [Транзакции и согласованность](architecture/storage/05-transactions-and-consistency.md)
+- [Резервное копирование и восстановление](architecture/storage/06-backup-and-recovery.md)
 - [Контракты операций](../packages/contracts/openapi/README.md)
 - [Контракты событий](../packages/contracts/events/README.md)
 

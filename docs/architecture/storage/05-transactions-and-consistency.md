@@ -1,6 +1,6 @@
 # Транзакции и согласованность
 
-Шаг 6.5 архитектуры хранения. Модель — [03-data-model.md](03-data-model.md) / [ddl/](ddl/), запросы — [04-queries-and-indexes.md](04-queries-and-indexes.md), карта — [interactions.md](../interactions.md).
+Шаг 6.5 архитектуры хранения. Модель — [03-data-model.md](03-data-model.md) / [ddl/](ddl/), запросы — [04-queries-and-indexes.md](04-queries-and-indexes.md), карта — [interactions.md](../interactions.md). Резервное копирование — [06-backup-and-recovery.md](06-backup-and-recovery.md).
 
 Пометки: **существует** — `outbox_events` / `processed_events`; **проектируется** — алгоритмы и отмеченные расширения модели/контрактов. Код, исполняемые миграции и живая БД не меняются этим шагом. Проверки ниже — **пошаговый анализ**, не интеграционные тесты и не прогон SQL.
 
