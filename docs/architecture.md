@@ -12,6 +12,7 @@
 - [Владение данными](architecture/storage/01-data-ownership.md)
 - [Хранение и изоляция](architecture/storage/02-storage-and-isolation.md)
 - [Модель данных](architecture/storage/03-data-model.md)
+- [Запросы и индексы](architecture/storage/04-queries-and-indexes.md)
 - [Контракты операций](../packages/contracts/openapi/README.md)
 - [Контракты событий](../packages/contracts/events/README.md)
 
