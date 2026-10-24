@@ -9,6 +9,7 @@
 - [Каталог событий](architecture/event-catalog.md)
 - [C4: контекст и контейнеры](architecture/c4.md)
 - [Взаимодействия и последовательности](architecture/interactions.md)
+- [Владение данными](architecture/storage/01-data-ownership.md)
 - [Контракты операций](../packages/contracts/openapi/README.md)
 - [Контракты событий](../packages/contracts/events/README.md)
 
