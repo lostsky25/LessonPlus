@@ -1,0 +1,806 @@
+openapi: 3.0.3
+info:
+  title: LessonPlus API gateway
+  version: 0.1.0
+  description: >
+    Внешний вход браузера. Реализованы только /health/live, /health/ready и /api/system/status.
+    Маршруты /api/v1 проектируются и контроллеров не имеют. Gateway не читает базы сервисов и не
+    проксирует /internal/v1.
+  x-implementation-status: designed
+servers:
+  - url: http://127.0.0.1:3000
+    description: Gateway на хосте. Браузер ходит сюда через интерфейс и proxy /api.
+tags:
+  - name: health
+    description: Работающий каркас gateway.
+  - name: system
+    description: Работающий сбор статусов.
+  - name: subscriptions
+  - name: schedule
+  - name: attendance
+  - name: transfers
+  - name: notifications
+paths:
+  /health/live:
+    get:
+      tags: [health]
+      operationId: gatewayGetHealthLive
+      x-implementation-status: implemented
+      summary: Процесс gateway запущен
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Live
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: gatewayGetHealthReady
+      x-implementation-status: implemented
+      summary: Конфигурация gateway загружена
+      description: Gateway не подключается к PostgreSQL и RabbitMQ.
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Live
+  /api/system/status:
+    get:
+      tags: [system]
+      operationId: gatewayGetSystemStatus
+      x-implementation-status: implemented
+      summary: Фактические статусы пяти бизнес-сервисов
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/SystemStatus
+  /api/v1/subscriptions:
+    post:
+      tags: [subscriptions]
+      operationId: gatewayActivateSubscription
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-upstream: { service: subscriptions, method: post, path: "/v1/subscriptions" }
+      summary: Активировать абонемент
+      description: Синхронная операция владельца. Активация сама по себе занятие не списывает.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/ActivateSubscription
+      responses:
+        '201':
+          $ref: ./components.yaml#/components/responses/Subscription
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    get:
+      tags: [subscriptions]
+      operationId: gatewayListSubscriptions
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-upstream: { service: subscriptions, method: get, path: "/v1/subscriptions" }
+      summary: Список абонементов
+      description: >
+        Фильтр studentId, status. Сортировка activatedAt или -activatedAt. Родитель после появления
+        авторизации видит только связанных учеников.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/StudentIdQuery
+        - $ref: ./components.yaml#/components/parameters/SubscriptionStatusQuery
+        - $ref: ./components.yaml#/components/parameters/SubscriptionSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/SubscriptionList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/subscriptions/{subscriptionId}:
+    get:
+      tags: [subscriptions]
+      operationId: gatewayGetSubscription
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-upstream: { service: subscriptions, method: get, path: "/v1/subscriptions/{subscriptionId}" }
+      summary: Просмотр абонемента
+      description: balance — остаток прав. Истечение по параметрам тарифа отдельным вызовом не запускается.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/SubscriptionId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Subscription
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/subscriptions/{subscriptionId}/rights:
+    get:
+      tags: [subscriptions]
+      operationId: gatewayListSubscriptionRights
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-upstream:
+        { service: subscriptions, method: get, path: "/v1/subscriptions/{subscriptionId}/rights" }
+      summary: Права абонемента
+      description: Фильтр status. Сортировка id или -id.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/SubscriptionId
+        - $ref: ./components.yaml#/components/parameters/RightStatusQuery
+        - $ref: ./components.yaml#/components/parameters/IdSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/LessonRightList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/rights/{rightId}:
+    get:
+      tags: [subscriptions]
+      operationId: gatewayGetRight
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-upstream: { service: subscriptions, method: get, path: "/v1/rights/{rightId}" }
+      summary: Просмотр права
+      description: Списание, резерв и перепривязка через gateway не вызываются.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/RightId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/LessonRight
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/lessons:
+    post:
+      tags: [schedule]
+      operationId: gatewayCreateLesson
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-upstream: { service: schedule, method: post, path: "/v1/lessons" }
+      summary: Создать занятие
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/CreateLesson
+      responses:
+        '201':
+          $ref: ./components.yaml#/components/responses/Lesson
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    get:
+      tags: [schedule]
+      operationId: gatewayListLessons
+      x-implementation-status: designed
+      x-required-roles: [administrator, teacher, parent]
+      x-upstream: { service: schedule, method: get, path: "/v1/lessons" }
+      summary: Просмотр расписания
+      description: >
+        Фильтры groupId, teacherId, from, to, status. Сортировка startsAt или -startsAt.
+        freeSeatCount в элементах место не удерживает.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/GroupIdQuery
+        - $ref: ./components.yaml#/components/parameters/TeacherIdQuery
+        - $ref: ./components.yaml#/components/parameters/FromQuery
+        - $ref: ./components.yaml#/components/parameters/ToQuery
+        - $ref: ./components.yaml#/components/parameters/LessonStatusQuery
+        - $ref: ./components.yaml#/components/parameters/LessonSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/LessonList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/lessons/{lessonId}:
+    get:
+      tags: [schedule]
+      operationId: gatewayGetLesson
+      x-implementation-status: designed
+      x-required-roles: [administrator, teacher, parent]
+      x-upstream: { service: schedule, method: get, path: "/v1/lessons/{lessonId}" }
+      summary: Занятие и свободные места
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/LessonId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Lesson
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    patch:
+      tags: [schedule]
+      operationId: gatewayUpdateLesson
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-upstream: { service: schedule, method: patch, path: "/v1/lessons/{lessonId}" }
+      summary: Изменить занятие
+      description: Отменённое школой занятие не изменяется, reason already_canceled.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/LessonId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/UpdateLesson
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Lesson
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/lessons/{lessonId}/school-cancellations:
+    post:
+      tags: [schedule]
+      operationId: gatewayCancelLessonBySchool
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-upstream:
+        { service: schedule, method: post, path: "/v1/lessons/{lessonId}/school-cancellations" }
+      summary: Отменить занятие школой
+      description: >
+        Ответ 202 создаёт операцию отмены и не завершает её. Итог этой операции читается
+        GET /api/v1/school-cancellations/{id}. Статус занятия сам по себе completed не означает.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/LessonId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/SchoolCancellation
+      responses:
+        '202':
+          $ref: ./components.yaml#/components/responses/SchoolCancellationAccepted
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/school-cancellations/{schoolCancellationId}:
+    get:
+      tags: [schedule]
+      operationId: gatewayGetSchoolCancellation
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-upstream:
+        { service: schedule, method: get, path: "/v1/school-cancellations/{schoolCancellationId}" }
+      summary: Прогресс отмены школой
+      description: >
+        Поля относятся к этой операции. completed возможен только после отмены занятия, сохранения
+        права и неизрасходованного лимита переносов.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/SchoolCancellationId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/SchoolCancellation
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/lessons/{lessonId}/bookings:
+    post:
+      tags: [schedule]
+      operationId: gatewayCreateBooking
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-upstream: { service: schedule, method: post, path: "/v1/lessons/{lessonId}/bookings" }
+      summary: Запросить запись на занятие
+      description: >
+        202 не означает подтверждённое место и не означает привязку права. Место читается по
+        statusUrl. Привязка появится у права после события BookingConfirmed вне переноса.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/LessonId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/CreateBooking
+      responses:
+        '202':
+          description: Запрос записи принят.
+          content:
+            application/json:
+              schema:
+                $ref: ./components.yaml#/components/schemas/AcceptedOperation
+              example:
+                status: accepted
+                resourceId: 88888888-8888-4888-8888-888888888888
+                statusUrl: /api/v1/bookings/88888888-8888-4888-8888-888888888888
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    get:
+      tags: [schedule]
+      operationId: gatewayListLessonBookings
+      x-implementation-status: designed
+      x-required-roles: [administrator, teacher]
+      x-upstream: { service: schedule, method: get, path: "/v1/lessons/{lessonId}/bookings" }
+      summary: Записи занятия
+      description: Фильтр seatStatus. Сортировка id или -id.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/LessonId
+        - $ref: ./components.yaml#/components/parameters/BookingStatusQuery
+        - $ref: ./components.yaml#/components/parameters/IdSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/BookingList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/bookings/{bookingId}:
+    get:
+      tags: [schedule]
+      operationId: gatewayGetBooking
+      x-implementation-status: designed
+      x-required-roles: [administrator, teacher, parent]
+      x-upstream: { service: schedule, method: get, path: "/v1/bookings/{bookingId}" }
+      summary: Состояние записи
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/BookingId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Booking
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/bookings/{bookingId}/cancellations:
+    post:
+      tags: [schedule]
+      operationId: gatewayCancelBooking
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-upstream: { service: schedule, method: post, path: "/v1/bookings/{bookingId}/cancellations" }
+      summary: Отменить запись
+      description: >
+        Обычная отмена, не освобождение места в переносе. 202 создаёт операцию отмены. Её прогресс
+        читается GET /api/v1/booking-cancellations/{id} и не подменяется текущим Booking.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/BookingId
+      responses:
+        '202':
+          $ref: ./components.yaml#/components/responses/BookingCancellationAccepted
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/booking-cancellations/{bookingCancellationId}:
+    get:
+      tags: [schedule]
+      operationId: gatewayGetBookingCancellation
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-upstream:
+        { service: schedule, method: get, path: "/v1/booking-cancellations/{bookingCancellationId}" }
+      summary: Прогресс отмены записи
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/BookingCancellationId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/BookingCancellation
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/attendance-registrations:
+    post:
+      tags: [attendance]
+      operationId: gatewayRegisterAttendance
+      x-implementation-status: designed
+      x-required-roles: [teacher]
+      x-upstream: { service: attendance, method: post, path: "/v1/attendance-registrations" }
+      summary: Запросить регистрацию посещения или отсутствия
+      description: >
+        202 не фиксирует окончательную отметку. Для presence она появляется после списания права.
+        Списание инициирует событие AttendanceRegistrationRequested, отдельного HTTP-вызова нет.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/RegisterAttendance
+      responses:
+        '202':
+          description: Запрос регистрации принят.
+          content:
+            application/json:
+              schema:
+                $ref: ./components.yaml#/components/schemas/AcceptedOperation
+              example:
+                status: accepted
+                resourceId: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+                statusUrl: /api/v1/attendance-registrations/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/attendance-registrations/{registrationId}:
+    get:
+      tags: [attendance]
+      operationId: gatewayGetAttendanceRegistration
+      x-implementation-status: designed
+      x-required-roles: [teacher, administrator]
+      x-upstream:
+        { service: attendance, method: get, path: "/v1/attendance-registrations/{registrationId}" }
+      summary: Состояние регистрации посещения
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/RegistrationId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/AttendanceRegistration
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/attendances/{attendanceId}/corrections:
+    post:
+      tags: [attendance]
+      operationId: gatewayCorrectAttendance
+      x-implementation-status: designed
+      x-required-roles: [teacher]
+      x-upstream:
+        { service: attendance, method: post, path: "/v1/attendances/{attendanceId}/corrections" }
+      summary: Исправить окончательную отметку
+      description: >
+        Пока регистрация не стала отметкой, новый запрос получает 409 reason registration_pending и
+        операцию не создаёт. Принятое исправление читается
+        GET /api/v1/attendance-corrections/{id}. Текущая Attendance этот запрос не заменяет.
+        Восстановление права при переходе к отсутствию не обещается.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/AttendanceId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/CorrectAttendance
+      responses:
+        '202':
+          $ref: ./components.yaml#/components/responses/AttendanceCorrectionAccepted
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/attendance-corrections/{attendanceCorrectionId}:
+    get:
+      tags: [attendance]
+      operationId: gatewayGetAttendanceCorrection
+      x-implementation-status: designed
+      x-required-roles: [teacher, administrator]
+      x-upstream:
+        { service: attendance, method: get, path: "/v1/attendance-corrections/{attendanceCorrectionId}" }
+      summary: Прогресс исправления посещения
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/AttendanceCorrectionId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/AttendanceCorrection
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/attendances/{attendanceId}:
+    get:
+      tags: [attendance]
+      operationId: gatewayGetAttendance
+      x-implementation-status: designed
+      x-required-roles: [teacher, administrator]
+      x-upstream: { service: attendance, method: get, path: "/v1/attendances/{attendanceId}" }
+      summary: Окончательная отметка
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/AttendanceId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Attendance
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/transfers:
+    post:
+      tags: [transfers]
+      operationId: gatewayRequestTransfer
+      x-implementation-status: designed
+      x-required-roles: [parent, administrator]
+      x-upstream: { service: transfers, method: post, path: "/v1/transfers" }
+      summary: Запросить перенос
+      description: >
+        202 означает, что координатор принял заявку, а не что место и право уже перенесены.
+        Отказ до новой привязки виден в GET как rejected. После новой привязки заявка доводится
+        до completed.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/RequestTransfer
+      responses:
+        '202':
+          description: Заявка принята в обработку.
+          content:
+            application/json:
+              schema:
+                $ref: ./components.yaml#/components/schemas/AcceptedOperation
+              example:
+                status: accepted
+                resourceId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+                statusUrl: /api/v1/transfers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    get:
+      tags: [transfers]
+      operationId: gatewayListTransfers
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-upstream: { service: transfers, method: get, path: "/v1/transfers" }
+      summary: Список заявок на перенос
+      description: Фильтры studentId и status. Сортировка requestedAt или -requestedAt.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/StudentIdQuery
+        - $ref: ./components.yaml#/components/parameters/TransferStatusQuery
+        - $ref: ./components.yaml#/components/parameters/TransferSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/TransferList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/transfers/{transferId}:
+    get:
+      tags: [transfers]
+      operationId: gatewayGetTransfer
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-upstream: { service: transfers, method: get, path: "/v1/transfers/{transferId}" }
+      summary: Результат заявки на перенос
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/TransferId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Transfer
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/notifications:
+    get:
+      tags: [notifications]
+      operationId: gatewayListNotifications
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent, teacher]
+      x-upstream: { service: notifications, method: get, path: "/v1/notifications" }
+      summary: Состояния доставки
+      description: >
+        Фильтры studentId, subjectType, subjectId, status. Сортировка recordedAt или -recordedAt.
+        Канал — имитация. Неуспех не отменяет связанную операцию.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/StudentIdQuery
+        - $ref: ./components.yaml#/components/parameters/SubjectTypeQuery
+        - $ref: ./components.yaml#/components/parameters/SubjectIdQuery
+        - $ref: ./components.yaml#/components/parameters/NotificationStatusQuery
+        - $ref: ./components.yaml#/components/parameters/NotificationSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/NotificationList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /api/v1/notifications/{notificationId}:
+    get:
+      tags: [notifications]
+      operationId: gatewayGetNotification
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent, teacher]
+      x-upstream: { service: notifications, method: get, path: "/v1/notifications/{notificationId}" }
+      summary: Состояние одной доставки
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/NotificationId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Notification
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Проектируется. В каркасе проверка JWT и ролей не выполняется.

@@ -1,0 +1,1873 @@
+openapi: 3.0.3
+info:
+  title: LessonPlus shared components
+  version: 0.1.0
+  description: >
+    Общие схемы проектируемых контрактов. Этот файл не публикует маршрутов.
+    Числовые лимиты тарифа, срок и срок уведомления о переносе в примерах не являются
+    требованиями.
+  x-implementation-status: designed
+paths: {}
+components:
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+      description: Идентификатор UUID. В примерах использована версия 4.
+    NullableUuid:
+      type: string
+      format: uuid
+      nullable: true
+      description: >
+        UUID либо null. type задан в этом же объекте схемы, поэтому null допустим в OpenAPI 3.0.3.
+        Отсутствие поля и значение null — разные случаи: в ответах поле остаётся обязательным.
+    DateTime:
+      type: string
+      format: date-time
+      description: Момент времени в ISO 8601, UTC. Тот же формат, что у occurred_at конверта события.
+    Error:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, detail]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URN вида urn:lessonplus:problem:<код>.
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+          enum:
+            - invalid_request
+            - unauthorized
+            - forbidden
+            - not_found
+            - state_conflict
+            - idempotency_key_reused
+            - dependency_unavailable
+        detail:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        instance:
+          type: string
+          minLength: 1
+          maxLength: 500
+        correlationId:
+          $ref: '#/components/schemas/Uuid'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z0-9_]+$'
+          description: Уточнение state_conflict. Набор reason задаётся у конкретной операции.
+        errors:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/FieldError'
+    FieldError:
+      type: object
+      additionalProperties: false
+      required: [pointer, detail]
+      properties:
+        pointer:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: JSON Pointer относительно тела или строки запроса.
+        detail:
+          type: string
+          minLength: 1
+          maxLength: 500
+    AcceptedOperation:
+      type: object
+      additionalProperties: false
+      required: [status, resourceId, statusUrl]
+      description: >
+        Принятие запроса записи, регистрации посещения или переноса. status accepted не означает,
+        что место занято, посещение зафиксировано или перенос выполнен. Отмена школой, отмена
+        записи и исправление посещения используют собственные ресурсы операции.
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        resourceId:
+          $ref: '#/components/schemas/Uuid'
+        statusUrl:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Путь GET на gateway, по которому читается дальнейшее состояние.
+    SchoolCancellation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - lessonId
+        - status
+        - statusUrl
+        - lessonEffect
+        - rightEffect
+        - transferLimitEffect
+        - failureReason
+      description: >
+        Прогресс одной отмены школой, а не текущий статус занятия. Поле id коррелирует 202 и GET.
+        completed допустим только при lessonEffect canceled, rightEffect preserved и
+        transferLimitEffect not_spent. Отменённое занятие само по себе операцию не завершает.
+        Доставка уведомления в этот результат не входит и неуспех доставки его не отменяет.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        lessonId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          type: string
+          enum: [accepted, in_progress, completed, rejected]
+        statusUrl:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Путь GET этой операции на gateway. Не путь занятия.
+        lessonEffect:
+          type: string
+          enum: [pending, canceled]
+        rightEffect:
+          type: string
+          enum: [pending, preserved]
+        transferLimitEffect:
+          type: string
+          enum: [pending, not_spent]
+        failureReason:
+          type: string
+          nullable: true
+          description: null, пока статус не rejected. При rejected значение не null.
+          enum: [already_canceled, right_conflict, null]
+    BookingCancellation:
+      type: object
+      additionalProperties: false
+      required: [id, bookingId, status, statusUrl, seatEffect, rightBindingEffect, failureReason]
+      description: >
+        Прогресс одной обычной отмены записи. Это не освобождение места в переносе и не прежнее
+        состояние Booking. Поле id коррелирует 202 и GET. completed допустим, когда seatEffect
+        равен canceled, а rightBindingEffect равен released или not_applicable. not_applicable
+        означает, что привязка права уже не указывала на эту запись.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          type: string
+          enum: [accepted, in_progress, completed, rejected]
+        statusUrl:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Путь GET этой операции на gateway. Не путь записи.
+        seatEffect:
+          type: string
+          enum: [pending, canceled]
+        rightBindingEffect:
+          type: string
+          enum: [pending, released, not_applicable]
+        failureReason:
+          type: string
+          nullable: true
+          description: null, пока статус не rejected. При rejected значение не null.
+          enum: [already_canceled, booking_not_cancelable, null]
+    AttendanceCorrection:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - attendanceId
+        - requestedMark
+        - status
+        - statusUrl
+        - markEffect
+        - rightEffect
+        - failureReason
+      description: >
+        Прогресс одного исправления, а не текущая отметка Attendance. Поле id коррелирует 202 и GET.
+        completed допустим, когда markEffect равен applied, а rightEffect — none, consumed или
+        unspecified. pending и consume_pending оставляют статус accepted или in_progress.
+        unspecified не означает ни списание, ни восстановление: правило отсутствия не задано.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        attendanceId:
+          $ref: '#/components/schemas/Uuid'
+        requestedMark:
+          type: string
+          enum: [presence, absence]
+        status:
+          type: string
+          enum: [accepted, in_progress, completed, rejected]
+        statusUrl:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Путь GET этого исправления на gateway. Не путь отметки.
+        markEffect:
+          type: string
+          enum: [pending, applied]
+        rightEffect:
+          type: string
+          enum: [pending, none, consume_pending, consumed, unspecified]
+        failureReason:
+          type: string
+          nullable: true
+          description: null, пока статус не rejected. При rejected значение не null.
+          enum: [registration_pending, mark_unchanged, right_conflict, null]
+    ActivateSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required: [studentId, tariffId]
+      properties:
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        tariffId:
+          $ref: '#/components/schemas/Uuid'
+    Subscription:
+      type: object
+      additionalProperties: false
+      required: [id, studentId, tariffId, status, activatedAt, expiresAt, balance]
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        tariffId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          type: string
+          enum: [active, expired]
+        activatedAt:
+          $ref: '#/components/schemas/DateTime'
+        expiresAt:
+          $ref: '#/components/schemas/DateTime'
+        balance:
+          type: integer
+          minimum: 0
+          description: >
+            Число прав в статусах available, reserved и bound. Списанные права не входят.
+            Остаток не бывает отрицательным. Размер пакета в примере — не требование к тарифу.
+    SubscriptionList:
+      type: object
+      additionalProperties: false
+      required: [items, limit, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Subscription'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        nextCursor:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 512
+    LessonRight:
+      type: object
+      additionalProperties: false
+      required: [id, subscriptionId, studentId, status, bookingId, transferId]
+      description: >
+        У права не больше одной действующей привязки к записи: bookingId задан только при status
+        bound. transferId задан только при status reserved.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        subscriptionId:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          type: string
+          enum: [available, reserved, bound, consumed]
+        bookingId:
+          $ref: '#/components/schemas/NullableUuid'
+        transferId:
+          $ref: '#/components/schemas/NullableUuid'
+    LessonRightList:
+      type: object
+      additionalProperties: false
+      required: [items, limit, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/LessonRight'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        nextCursor:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 512
+    ReserveRightRequest:
+      type: object
+      additionalProperties: false
+      required: [transferId, sourceBookingId]
+      properties:
+        transferId:
+          $ref: '#/components/schemas/Uuid'
+        sourceBookingId:
+          $ref: '#/components/schemas/Uuid'
+    RightReservation:
+      type: object
+      additionalProperties: false
+      required: [id, rightId, transferId, sourceBookingId, status]
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+        transferId:
+          $ref: '#/components/schemas/Uuid'
+        sourceBookingId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          type: string
+          enum: [active, released]
+    ReleaseRightReservationRequest:
+      type: object
+      additionalProperties: false
+      required: [transferId]
+      properties:
+        transferId:
+          $ref: '#/components/schemas/Uuid'
+    RebindRightRequest:
+      type: object
+      additionalProperties: false
+      required: [transferId, reservationId, targetBookingId]
+      description: >
+        targetBookingId выдаёт расписание в момент резерва места, ещё до подтверждения записи.
+        Этот вызов фиксирует новую привязку. После него компенсация снятием резерва запрещена.
+      properties:
+        transferId:
+          $ref: '#/components/schemas/Uuid'
+        reservationId:
+          $ref: '#/components/schemas/Uuid'
+        targetBookingId:
+          $ref: '#/components/schemas/Uuid'
+    CreateLessonRequest:
+      type: object
+      additionalProperties: false
+      required: [groupId, teacherId, startsAt, endsAt, capacity]
+      description: endsAt позже startsAt. Вместимость — свойство этого занятия, не общий лимит системы.
+      properties:
+        groupId:
+          $ref: '#/components/schemas/Uuid'
+        teacherId:
+          $ref: '#/components/schemas/Uuid'
+        startsAt:
+          $ref: '#/components/schemas/DateTime'
+        endsAt:
+          $ref: '#/components/schemas/DateTime'
+        capacity:
+          type: integer
+          minimum: 1
+    UpdateLessonRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >
+        Меняется хотя бы одно поле. endsAt остаётся позже startsAt с учётом уже сохранённых
+        значений. capacity не опускается ниже суммы подтверждённых записей и действующих резервов.
+      properties:
+        teacherId:
+          $ref: '#/components/schemas/Uuid'
+        startsAt:
+          $ref: '#/components/schemas/DateTime'
+        endsAt:
+          $ref: '#/components/schemas/DateTime'
+        capacity:
+          type: integer
+          minimum: 1
+    SchoolCancellationRequest:
+      type: object
+      additionalProperties: false
+      description: Пустой объект допустим. Отмена школой не является переносом и не списывает право.
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    Lesson:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - groupId
+        - teacherId
+        - startsAt
+        - endsAt
+        - capacity
+        - status
+        - confirmedBookingCount
+        - activeReserveCount
+        - freeSeatCount
+      description: >
+        freeSeatCount = capacity − confirmedBookingCount − activeReserveCount.
+        Чтение freeSeatCount место не удерживает и не гарантирует успешную конкурентную запись.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        groupId:
+          $ref: '#/components/schemas/Uuid'
+        teacherId:
+          $ref: '#/components/schemas/Uuid'
+        startsAt:
+          $ref: '#/components/schemas/DateTime'
+        endsAt:
+          $ref: '#/components/schemas/DateTime'
+        capacity:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [scheduled, canceled_by_school]
+        confirmedBookingCount:
+          type: integer
+          minimum: 0
+        activeReserveCount:
+          type: integer
+          minimum: 0
+        freeSeatCount:
+          type: integer
+          minimum: 0
+    LessonList:
+      type: object
+      additionalProperties: false
+      required: [items, limit, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Lesson'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        nextCursor:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 512
+    CreateBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [studentId, rightId]
+      properties:
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+    Booking:
+      type: object
+      additionalProperties: false
+      required: [id, lessonId, studentId, rightId, seatStatus]
+      description: >
+        Ресурс владельца места. Привязка права здесь не возвращается: её читают у абонементов.
+        Gateway два ответа не объединяет.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        lessonId:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+        seatStatus:
+          type: string
+          enum: [pending, confirmed, canceled, rejected]
+    BookingList:
+      type: object
+      additionalProperties: false
+      required: [items, limit, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Booking'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        nextCursor:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 512
+    ReserveSeatRequest:
+      type: object
+      additionalProperties: false
+      required: [transferId, studentId, rightId]
+      properties:
+        transferId:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+    SeatReservation:
+      type: object
+      additionalProperties: false
+      required: [id, lessonId, transferId, studentId, rightId, targetBookingId, status]
+      description: >
+        Резерв места выдаёт targetBookingId будущей записи. Подтверждение позже меняет статус
+        места и не создаёт другой идентификатор и не создаёт привязку права.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        lessonId:
+          $ref: '#/components/schemas/Uuid'
+        transferId:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+        targetBookingId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          type: string
+          enum: [active, released]
+    ReleaseSeatReservationRequest:
+      type: object
+      additionalProperties: false
+      required: [transferId]
+      properties:
+        transferId:
+          $ref: '#/components/schemas/Uuid'
+    ConfirmTransferBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [seatReservationId, targetBookingId]
+      properties:
+        seatReservationId:
+          $ref: '#/components/schemas/Uuid'
+        targetBookingId:
+          $ref: '#/components/schemas/Uuid'
+    TransferReleaseBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [transferId]
+      description: >
+        Освобождение исходного места после новой привязки. Это не обычная отмена записи и
+        привязку права не снимает.
+      properties:
+        transferId:
+          $ref: '#/components/schemas/Uuid'
+    RegisterAttendanceRequest:
+      type: object
+      additionalProperties: false
+      required: [bookingId, studentId, lessonId, rightId, mark]
+      properties:
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        lessonId:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+        mark:
+          type: string
+          enum: [presence, absence]
+    AttendanceRegistration:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - bookingId
+        - studentId
+        - lessonId
+        - rightId
+        - mark
+        - status
+        - rightEffect
+        - attendanceId
+      description: >
+        Для presence статус остаётся pending, пока абонементы не подтвердят списание.
+        Для absence окончательный статус может быть absent, а rightEffect — unspecified:
+        списывает ли отсутствие право, требования не задают.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        lessonId:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+        mark:
+          type: string
+          enum: [presence, absence]
+        status:
+          type: string
+          enum: [accepted, pending, recorded, absent, rejected]
+        rightEffect:
+          type: string
+          enum: [none, consume_pending, consumed, unspecified]
+        attendanceId:
+          $ref: '#/components/schemas/NullableUuid'
+    CorrectAttendanceRequest:
+      type: object
+      additionalProperties: false
+      required: [mark, reason]
+      properties:
+        mark:
+          type: string
+          enum: [presence, absence]
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    Attendance:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - registrationId
+        - bookingId
+        - studentId
+        - lessonId
+        - rightId
+        - mark
+        - status
+        - rightEffect
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        registrationId:
+          $ref: '#/components/schemas/Uuid'
+        bookingId:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        lessonId:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+        mark:
+          type: string
+          enum: [presence, absence]
+        status:
+          type: string
+          enum: [recorded, absent, correction_pending]
+        rightEffect:
+          type: string
+          enum: [none, consume_pending, consumed, unspecified]
+    RequestTransferRequest:
+      type: object
+      additionalProperties: false
+      required: [studentId, rightId, sourceBookingId, targetLessonId]
+      description: Целевое занятие не совпадает с занятием исходной записи. Использованное право не переносится.
+      properties:
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+        sourceBookingId:
+          $ref: '#/components/schemas/Uuid'
+        targetLessonId:
+          $ref: '#/components/schemas/Uuid'
+    Transfer:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - studentId
+        - rightId
+        - sourceBookingId
+        - targetLessonId
+        - targetBookingId
+        - status
+        - rejectionReason
+      description: >
+        completed возможен только после новой привязки, подтверждения новой записи и освобождения
+        исходного места. rejected — только до новой привязки. Числовой лимит и срок уведомления
+        в контракте не заданы.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        rightId:
+          $ref: '#/components/schemas/Uuid'
+        sourceBookingId:
+          $ref: '#/components/schemas/Uuid'
+        targetLessonId:
+          $ref: '#/components/schemas/Uuid'
+        targetBookingId:
+          $ref: '#/components/schemas/NullableUuid'
+        status:
+          type: string
+          enum: [accepted, in_progress, completed, rejected]
+        rejectionReason:
+          type: string
+          nullable: true
+          description: >
+            null, пока заявка не rejected. При отказе — одно из значений enum, кроме null.
+            null входит в enum, иначе ограничение enum запретило бы само значение null.
+          enum:
+            - right_consumed
+            - right_not_available
+            - no_free_seat
+            - notice_period
+            - transfer_limit
+            - subscription_expired
+            - lesson_canceled
+            - target_is_source
+            - null
+    TransferList:
+      type: object
+      additionalProperties: false
+      required: [items, limit, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Transfer'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        nextCursor:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 512
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, studentId, subjectType, subjectId, status, channel, recordedAt]
+      description: >
+        channel imitation означает, что внешнего почтового или SMS-канала нет.
+        status failed не отменяет абонемент, запись, посещение или перенос.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        studentId:
+          $ref: '#/components/schemas/Uuid'
+        subjectType:
+          type: string
+          enum: [subscription, lesson, booking, attendance, transfer]
+        subjectId:
+          $ref: '#/components/schemas/Uuid'
+        status:
+          type: string
+          enum: [pending, delivered, failed]
+        channel:
+          type: string
+          enum: [imitation]
+        recordedAt:
+          $ref: '#/components/schemas/DateTime'
+    NotificationList:
+      type: object
+      additionalProperties: false
+      required: [items, limit, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Notification'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        nextCursor:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 512
+    LiveStatus:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    ReadinessStatus:
+      type: object
+      additionalProperties: false
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+        checks:
+          type: object
+          additionalProperties: false
+          required: [postgres, rabbitmq]
+          properties:
+            postgres:
+              type: string
+              enum: [up, down]
+            rabbitmq:
+              type: string
+              enum: [up, down]
+    SystemStatus:
+      type: object
+      additionalProperties: false
+      required: [services]
+      properties:
+        services:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, live, ready]
+            properties:
+              name:
+                type: string
+                enum: [subscriptions, schedule, attendance, transfers, notifications]
+              live:
+                type: string
+                enum: [up, down]
+              ready:
+                type: string
+                enum: [up, down]
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        UUID. Область ключа — исходная вызывающая сторона, метод и шаблон пути владельца
+        (/v1/..., без префикса /api). Отпечаток — фактические значения path-параметров, значимые
+        query-параметры и канонический JSON тела. Канонический JSON не содержит незначимых
+        пробелов, ключи объектов идут по возрастанию кодов Unicode. Заголовок в отпечаток не входит.
+        Значимы query-параметры, объявленные у операции; прочие query-параметры в отпечаток не входят.
+        Тот же ключ и тот же отпечаток возвращают сохранённый ответ. Тот же ключ и другой отпечаток,
+        включая то же тело при другом идентификаторе в пути, дают 409 idempotency_key_reused.
+        Gateway передаёт этот ключ владельцу без изменения и не подменяет вызывающего своей
+        идентичностью. Внутренний шаг transfers использует отдельный ключ, стабильный при повторе
+        этого шага и не равный ни публичному ключу, ни ключу другого шага. Срок хранения появится
+        вместе со схемой хранения.
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Курсор, ранее полученный в nextCursor. Чужой или повреждённый курсор — invalid_request.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+    SubscriptionSort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [activatedAt, -activatedAt]
+        default: -activatedAt
+    LessonSort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [startsAt, -startsAt]
+        default: startsAt
+    IdSort:
+      name: sort
+      in: query
+      required: false
+      description: Порядок по идентификатору, пока у ресурса нет отдельного поля времени создания.
+      schema:
+        type: string
+        enum: [id, -id]
+        default: id
+    TransferSort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [requestedAt, -requestedAt]
+        default: -requestedAt
+    NotificationSort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [recordedAt, -recordedAt]
+        default: -recordedAt
+    StudentIdQuery:
+      name: studentId
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    GroupIdQuery:
+      name: groupId
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    TeacherIdQuery:
+      name: teacherId
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    FromQuery:
+      name: from
+      in: query
+      required: false
+      description: Нижняя граница startsAt, включительно.
+      schema:
+        $ref: '#/components/schemas/DateTime'
+    ToQuery:
+      name: to
+      in: query
+      required: false
+      description: Верхняя граница startsAt, включительно. Если заданы обе границы, from не позже to.
+      schema:
+        $ref: '#/components/schemas/DateTime'
+    SubscriptionStatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [active, expired]
+    RightStatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [available, reserved, bound, consumed]
+    LessonStatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [scheduled, canceled_by_school]
+    BookingStatusQuery:
+      name: seatStatus
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [pending, confirmed, canceled, rejected]
+    TransferStatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [accepted, in_progress, completed, rejected]
+    NotificationStatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [pending, delivered, failed]
+    SubjectTypeQuery:
+      name: subjectType
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [subscription, lesson, booking, attendance, transfer]
+    SubjectIdQuery:
+      name: subjectId
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    SubscriptionId:
+      name: subscriptionId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    RightId:
+      name: rightId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    ReservationId:
+      name: reservationId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    LessonId:
+      name: lessonId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    RegistrationId:
+      name: registrationId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    AttendanceId:
+      name: attendanceId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    TransferId:
+      name: transferId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    SchoolCancellationId:
+      name: schoolCancellationId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    BookingCancellationId:
+      name: bookingCancellationId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    AttendanceCorrectionId:
+      name: attendanceCorrectionId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Uuid'
+  requestBodies:
+    ActivateSubscription:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ActivateSubscriptionRequest'
+          example:
+            studentId: 11111111-1111-4111-8111-111111111111
+            tariffId: 22222222-2222-4222-8222-222222222222
+    CreateLesson:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CreateLessonRequest'
+          example:
+            groupId: 55555555-5555-4555-8555-555555555555
+            teacherId: 66666666-6666-4666-8666-666666666666
+            startsAt: '2026-10-24T09:00:00Z'
+            endsAt: '2026-10-24T10:00:00Z'
+            capacity: 10
+    UpdateLesson:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UpdateLessonRequest'
+          example:
+            capacity: 12
+    SchoolCancellation:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SchoolCancellationRequest'
+          example:
+            reason: Учебный центр отменил занятие
+    CreateBooking:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CreateBookingRequest'
+          example:
+            studentId: 11111111-1111-4111-8111-111111111111
+            rightId: 44444444-4444-4444-8444-444444444444
+    RegisterAttendance:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RegisterAttendanceRequest'
+          examples:
+            presence:
+              value:
+                bookingId: 88888888-8888-4888-8888-888888888888
+                studentId: 11111111-1111-4111-8111-111111111111
+                lessonId: 77777777-7777-4777-8777-777777777777
+                rightId: 44444444-4444-4444-8444-444444444444
+                mark: presence
+            absence:
+              value:
+                bookingId: 88888888-8888-4888-8888-888888888888
+                studentId: 11111111-1111-4111-8111-111111111111
+                lessonId: 77777777-7777-4777-8777-777777777777
+                rightId: 44444444-4444-4444-8444-444444444444
+                mark: absence
+    CorrectAttendance:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CorrectAttendanceRequest'
+          example:
+            mark: absence
+            reason: Отметка поставлена не тому ученику
+    RequestTransfer:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RequestTransferRequest'
+          example:
+            studentId: 11111111-1111-4111-8111-111111111111
+            rightId: 44444444-4444-4444-8444-444444444444
+            sourceBookingId: 88888888-8888-4888-8888-888888888888
+            targetLessonId: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+    ReserveRight:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReserveRightRequest'
+          example:
+            transferId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+            sourceBookingId: 88888888-8888-4888-8888-888888888888
+    ReleaseRightReservation:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReleaseRightReservationRequest'
+          example:
+            transferId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+    RebindRight:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RebindRightRequest'
+          example:
+            transferId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+            reservationId: 12121212-1212-4121-8121-121212121212
+            targetBookingId: abababab-abab-4aba-8aba-abababababab
+    ReserveSeat:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReserveSeatRequest'
+          example:
+            transferId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+            studentId: 11111111-1111-4111-8111-111111111111
+            rightId: 44444444-4444-4444-8444-444444444444
+    ReleaseSeatReservation:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReleaseSeatReservationRequest'
+          example:
+            transferId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+    ConfirmTransferBooking:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ConfirmTransferBookingRequest'
+          example:
+            seatReservationId: ffffffff-ffff-4fff-8fff-ffffffffffff
+            targetBookingId: abababab-abab-4aba-8aba-abababababab
+    TransferReleaseBooking:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TransferReleaseBookingRequest'
+          example:
+            transferId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  responses:
+    InvalidRequest:
+      description: Тело, параметр или ключ идемпотентности не проходят проверку формы.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: urn:lessonplus:problem:invalid-request
+            title: Некорректный запрос
+            status: 400
+            code: invalid_request
+            detail: Поле studentId должно быть UUID.
+            errors:
+              - pointer: /studentId
+                detail: Ожидается UUID.
+    Unauthorized:
+      description: Проектируется. В каркасе JWT нет, и этот ответ сейчас не возвращается.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: urn:lessonplus:problem:unauthorized
+            title: Требуется аутентификация
+            status: 401
+            code: unauthorized
+            detail: Запрос без учётных данных.
+    Forbidden:
+      description: Проектируется. Роль известна, но к операции не допущена. Сейчас проверка не выполняется.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: urn:lessonplus:problem:forbidden
+            title: Недостаточно прав
+            status: 403
+            code: forbidden
+            detail: Роли parent эта операция недоступна.
+    NotFound:
+      description: Объект владельца не найден. Это не отсутствие свободного места и не конфликт состояния.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: urn:lessonplus:problem:not-found
+            title: Объект не найден
+            status: 404
+            code: not_found
+            detail: Абонемент не найден.
+    Conflict:
+      description: >
+        Конфликт состояния либо тот же Idempotency-Key с другим отпечатком.
+        Повтор того же отпечатка конфликтом не является и возвращает сохранённый ответ.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            state:
+              summary: Состояние не допускает операцию
+              value:
+                type: urn:lessonplus:problem:state-conflict
+                title: Конфликт состояния
+                status: 409
+                code: state_conflict
+                reason: right_consumed
+                detail: Использованное право не переносится.
+            idempotency:
+              summary: Тот же ключ, другой отпечаток тела
+              value:
+                type: urn:lessonplus:problem:idempotency-key-reused
+                title: Ключ идемпотентности уже использован
+                status: 409
+                code: idempotency_key_reused
+                detail: Ключ уже сохранён с другим отпечатком тела запроса.
+            differentResource:
+              summary: Тот же ключ и то же тело, другой идентификатор в пути
+              value:
+                type: urn:lessonplus:problem:idempotency-key-reused
+                title: Ключ идемпотентности уже использован
+                status: 409
+                code: idempotency_key_reused
+                detail: >
+                  Ключ уже сохранён для PATCH /v1/lessons/{lessonId} с другим lessonId.
+                  Тело совпало, фактический path-параметр — нет.
+                instance: /api/v1/lessons/12121212-1212-4121-8121-121212121212
+    DependencyUnavailable:
+      description: >
+        Недоступна собственная база сервиса или зависимость, без которой шаг нельзя принять.
+        Ошибка доставки уведомления сюда не входит и бизнес-операцию не отменяет.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: urn:lessonplus:problem:dependency-unavailable
+            title: Зависимость недоступна
+            status: 503
+            code: dependency_unavailable
+            detail: PostgreSQL сервиса недоступен.
+    Subscription:
+      description: Абонемент владельца.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Subscription'
+          example:
+            id: 33333333-3333-4333-8333-333333333333
+            studentId: 11111111-1111-4111-8111-111111111111
+            tariffId: 22222222-2222-4222-8222-222222222222
+            status: active
+            activatedAt: '2026-10-24T09:00:00Z'
+            expiresAt: '2026-11-24T09:00:00Z'
+            balance: 8
+    SubscriptionList:
+      description: Страница абонементов.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SubscriptionList'
+          example:
+            items:
+              - id: 33333333-3333-4333-8333-333333333333
+                studentId: 11111111-1111-4111-8111-111111111111
+                tariffId: 22222222-2222-4222-8222-222222222222
+                status: active
+                activatedAt: '2026-10-24T09:00:00Z'
+                expiresAt: '2026-11-24T09:00:00Z'
+                balance: 8
+            limit: 20
+            nextCursor: null
+    LessonRight:
+      description: Право на занятие.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LessonRight'
+          example:
+            id: 44444444-4444-4444-8444-444444444444
+            subscriptionId: 33333333-3333-4333-8333-333333333333
+            studentId: 11111111-1111-4111-8111-111111111111
+            status: bound
+            bookingId: 88888888-8888-4888-8888-888888888888
+            transferId: null
+    LessonRightList:
+      description: Страница прав одного абонемента.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LessonRightList'
+          example:
+            items:
+              - id: 44444444-4444-4444-8444-444444444444
+                subscriptionId: 33333333-3333-4333-8333-333333333333
+                studentId: 11111111-1111-4111-8111-111111111111
+                status: bound
+                bookingId: 88888888-8888-4888-8888-888888888888
+                transferId: null
+            limit: 20
+            nextCursor: null
+    Lesson:
+      description: Занятие и расчёт свободных мест на момент чтения.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Lesson'
+          example:
+            id: 77777777-7777-4777-8777-777777777777
+            groupId: 55555555-5555-4555-8555-555555555555
+            teacherId: 66666666-6666-4666-8666-666666666666
+            startsAt: '2026-10-24T09:00:00Z'
+            endsAt: '2026-10-24T10:00:00Z'
+            capacity: 10
+            status: scheduled
+            confirmedBookingCount: 3
+            activeReserveCount: 1
+            freeSeatCount: 6
+    LessonList:
+      description: Страница занятий.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LessonList'
+          example:
+            items:
+              - id: 77777777-7777-4777-8777-777777777777
+                groupId: 55555555-5555-4555-8555-555555555555
+                teacherId: 66666666-6666-4666-8666-666666666666
+                startsAt: '2026-10-24T09:00:00Z'
+                endsAt: '2026-10-24T10:00:00Z'
+                capacity: 10
+                status: scheduled
+                confirmedBookingCount: 3
+                activeReserveCount: 1
+                freeSeatCount: 6
+            limit: 20
+            nextCursor: null
+    Booking:
+      description: Запись на занятие, только состояние места.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Booking'
+          example:
+            id: 88888888-8888-4888-8888-888888888888
+            lessonId: 77777777-7777-4777-8777-777777777777
+            studentId: 11111111-1111-4111-8111-111111111111
+            rightId: 44444444-4444-4444-8444-444444444444
+            seatStatus: confirmed
+    BookingList:
+      description: Страница записей занятия.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BookingList'
+          example:
+            items:
+              - id: 88888888-8888-4888-8888-888888888888
+                lessonId: 77777777-7777-4777-8777-777777777777
+                studentId: 11111111-1111-4111-8111-111111111111
+                rightId: 44444444-4444-4444-8444-444444444444
+                seatStatus: confirmed
+            limit: 20
+            nextCursor: null
+    AttendanceRegistration:
+      description: Состояние запроса регистрации. recorded здесь ещё не обещается.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AttendanceRegistration'
+          examples:
+            presence:
+              summary: Ожидается подтверждение списания
+              value:
+                id: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+                bookingId: 88888888-8888-4888-8888-888888888888
+                studentId: 11111111-1111-4111-8111-111111111111
+                lessonId: 77777777-7777-4777-8777-777777777777
+                rightId: 44444444-4444-4444-8444-444444444444
+                mark: presence
+                status: pending
+                rightEffect: consume_pending
+                attendanceId: null
+            absence:
+              summary: Отсутствие без решения о списании
+              value:
+                id: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+                bookingId: 88888888-8888-4888-8888-888888888888
+                studentId: 11111111-1111-4111-8111-111111111111
+                lessonId: 77777777-7777-4777-8777-777777777777
+                rightId: 44444444-4444-4444-8444-444444444444
+                mark: absence
+                status: absent
+                rightEffect: unspecified
+                attendanceId: 99999999-9999-4999-8999-999999999999
+    Attendance:
+      description: Окончательная или исправляемая отметка.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Attendance'
+          example:
+            id: 99999999-9999-4999-8999-999999999999
+            registrationId: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+            bookingId: 88888888-8888-4888-8888-888888888888
+            studentId: 11111111-1111-4111-8111-111111111111
+            lessonId: 77777777-7777-4777-8777-777777777777
+            rightId: 44444444-4444-4444-8444-444444444444
+            mark: presence
+            status: recorded
+            rightEffect: consumed
+    Transfer:
+      description: Заявка переноса. accepted и in_progress не являются успешным переносом.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Transfer'
+          examples:
+            accepted:
+              summary: Заявка принята координатором
+              value:
+                id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+                studentId: 11111111-1111-4111-8111-111111111111
+                rightId: 44444444-4444-4444-8444-444444444444
+                sourceBookingId: 88888888-8888-4888-8888-888888888888
+                targetLessonId: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+                targetBookingId: null
+                status: accepted
+                rejectionReason: null
+            rejected:
+              summary: Отказ до новой привязки
+              value:
+                id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+                studentId: 11111111-1111-4111-8111-111111111111
+                rightId: 44444444-4444-4444-8444-444444444444
+                sourceBookingId: 88888888-8888-4888-8888-888888888888
+                targetLessonId: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+                targetBookingId: null
+                status: rejected
+                rejectionReason: right_consumed
+    TransferList:
+      description: Страница заявок.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TransferList'
+          example:
+            items:
+              - id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+                studentId: 11111111-1111-4111-8111-111111111111
+                rightId: 44444444-4444-4444-8444-444444444444
+                sourceBookingId: 88888888-8888-4888-8888-888888888888
+                targetLessonId: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+                targetBookingId: null
+                status: accepted
+                rejectionReason: null
+            limit: 20
+            nextCursor: null
+    Notification:
+      description: Состояние имитации доставки.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Notification'
+          example:
+            id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+            studentId: 11111111-1111-4111-8111-111111111111
+            subjectType: transfer
+            subjectId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+            status: failed
+            channel: imitation
+            recordedAt: '2026-10-24T12:00:00Z'
+    NotificationList:
+      description: Страница состояний доставки.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NotificationList'
+          example:
+            items:
+              - id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+                studentId: 11111111-1111-4111-8111-111111111111
+                subjectType: transfer
+                subjectId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+                status: failed
+                channel: imitation
+                recordedAt: '2026-10-24T12:00:00Z'
+            limit: 20
+            nextCursor: null
+    RightReservation:
+      description: Блокировка неиспользованного права для переноса.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RightReservation'
+          example:
+            id: 12121212-1212-4121-8121-121212121212
+            rightId: 44444444-4444-4444-8444-444444444444
+            transferId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+            sourceBookingId: 88888888-8888-4888-8888-888888888888
+            status: active
+    SeatReservation:
+      description: Резерв места и заранее выданный идентификатор будущей записи.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SeatReservation'
+          example:
+            id: ffffffff-ffff-4fff-8fff-ffffffffffff
+            lessonId: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+            transferId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+            studentId: 11111111-1111-4111-8111-111111111111
+            rightId: 44444444-4444-4444-8444-444444444444
+            targetBookingId: abababab-abab-4aba-8aba-abababababab
+            status: active
+    SchoolCancellationAccepted:
+      description: >
+        Запрос отмены школой принят. status accepted не завершает операцию: эффекты ещё pending.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SchoolCancellation'
+          example:
+            id: cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+            lessonId: 77777777-7777-4777-8777-777777777777
+            status: accepted
+            statusUrl: /api/v1/school-cancellations/cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+            lessonEffect: pending
+            rightEffect: pending
+            transferLimitEffect: pending
+            failureReason: null
+    SchoolCancellation:
+      description: >
+        Прогресс конкретной отмены. completed есть только в примере, где занятие отменено,
+        право сохранено и лимит переносов не израсходован.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SchoolCancellation'
+          examples:
+            accepted:
+              summary: Этот запрос ещё ждёт согласования эффектов
+              value:
+                id: cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+                lessonId: 77777777-7777-4777-8777-777777777777
+                status: accepted
+                statusUrl: /api/v1/school-cancellations/cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+                lessonEffect: pending
+                rightEffect: pending
+                transferLimitEffect: pending
+                failureReason: null
+            inProgress:
+              summary: Занятие уже отменено, остальные эффекты ещё не согласованы
+              value:
+                id: cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+                lessonId: 77777777-7777-4777-8777-777777777777
+                status: in_progress
+                statusUrl: /api/v1/school-cancellations/cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+                lessonEffect: canceled
+                rightEffect: pending
+                transferLimitEffect: pending
+                failureReason: null
+            completed:
+              summary: Все бизнес-эффекты отмены согласованы
+              value:
+                id: cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+                lessonId: 77777777-7777-4777-8777-777777777777
+                status: completed
+                statusUrl: /api/v1/school-cancellations/cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+                lessonEffect: canceled
+                rightEffect: preserved
+                transferLimitEffect: not_spent
+                failureReason: null
+            rejected:
+              summary: Эта операция окончательно отклонена
+              value:
+                id: cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+                lessonId: 77777777-7777-4777-8777-777777777777
+                status: rejected
+                statusUrl: /api/v1/school-cancellations/cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd
+                lessonEffect: pending
+                rightEffect: pending
+                transferLimitEffect: pending
+                failureReason: right_conflict
+    BookingCancellationAccepted:
+      description: Запрос обычной отмены записи принят. Место и привязка права ещё не сняты.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BookingCancellation'
+          example:
+            id: bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+            bookingId: 88888888-8888-4888-8888-888888888888
+            status: accepted
+            statusUrl: /api/v1/booking-cancellations/bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+            seatEffect: pending
+            rightBindingEffect: pending
+            failureReason: null
+    BookingCancellation:
+      description: Прогресс конкретной отмены записи, не текущий Booking.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BookingCancellation'
+          examples:
+            accepted:
+              summary: Этот запрос ещё ждёт снятия места и привязки
+              value:
+                id: bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+                bookingId: 88888888-8888-4888-8888-888888888888
+                status: accepted
+                statusUrl: /api/v1/booking-cancellations/bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+                seatEffect: pending
+                rightBindingEffect: pending
+                failureReason: null
+            inProgress:
+              summary: Место снято, привязка права ещё не согласована
+              value:
+                id: bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+                bookingId: 88888888-8888-4888-8888-888888888888
+                status: in_progress
+                statusUrl: /api/v1/booking-cancellations/bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+                seatEffect: canceled
+                rightBindingEffect: pending
+                failureReason: null
+            completed:
+              summary: Место снято и привязка права снята
+              value:
+                id: bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+                bookingId: 88888888-8888-4888-8888-888888888888
+                status: completed
+                statusUrl: /api/v1/booking-cancellations/bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+                seatEffect: canceled
+                rightBindingEffect: released
+                failureReason: null
+            rejected:
+              summary: Эта отмена окончательно отклонена
+              value:
+                id: bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+                bookingId: 88888888-8888-4888-8888-888888888888
+                status: rejected
+                statusUrl: /api/v1/booking-cancellations/bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc
+                seatEffect: pending
+                rightBindingEffect: pending
+                failureReason: booking_not_cancelable
+    AttendanceCorrectionAccepted:
+      description: >
+        Запрос исправления принят. Это ещё не новая окончательная отметка и не прежняя Attendance.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AttendanceCorrection'
+          example:
+            id: cececece-cece-4cec-8cec-cececececece
+            attendanceId: 99999999-9999-4999-8999-999999999999
+            requestedMark: absence
+            status: accepted
+            statusUrl: /api/v1/attendance-corrections/cececece-cece-4cec-8cec-cececececece
+            markEffect: pending
+            rightEffect: pending
+            failureReason: null
+    AttendanceCorrection:
+      description: >
+        Прогресс конкретного исправления. unspecified в завершённом примере не решает, списано ли
+        право при отсутствии.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AttendanceCorrection'
+          examples:
+            accepted:
+              summary: Этот запрос исправления ещё не применён
+              value:
+                id: cececece-cece-4cec-8cec-cececececece
+                attendanceId: 99999999-9999-4999-8999-999999999999
+                requestedMark: absence
+                status: accepted
+                statusUrl: /api/v1/attendance-corrections/cececece-cece-4cec-8cec-cececececece
+                markEffect: pending
+                rightEffect: pending
+                failureReason: null
+            inProgress:
+              summary: Отметка уже изменена, эффект для права ещё не окончателен
+              value:
+                id: cececece-cece-4cec-8cec-cececececece
+                attendanceId: 99999999-9999-4999-8999-999999999999
+                requestedMark: presence
+                status: in_progress
+                statusUrl: /api/v1/attendance-corrections/cececece-cece-4cec-8cec-cececececece
+                markEffect: applied
+                rightEffect: consume_pending
+                failureReason: null
+            completed:
+              summary: Исправление на отсутствие завершено без решения о праве
+              value:
+                id: cececece-cece-4cec-8cec-cececececece
+                attendanceId: 99999999-9999-4999-8999-999999999999
+                requestedMark: absence
+                status: completed
+                statusUrl: /api/v1/attendance-corrections/cececece-cece-4cec-8cec-cececececece
+                markEffect: applied
+                rightEffect: unspecified
+                failureReason: null
+            rejected:
+              summary: Это исправление окончательно отклонено
+              value:
+                id: cececece-cece-4cec-8cec-cececececece
+                attendanceId: 99999999-9999-4999-8999-999999999999
+                requestedMark: absence
+                status: rejected
+                statusUrl: /api/v1/attendance-corrections/cececece-cece-4cec-8cec-cececececece
+                markEffect: pending
+                rightEffect: pending
+                failureReason: right_conflict
+    Live:
+      description: Процесс запущен.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LiveStatus'
+          example:
+            status: ok
+    ServiceReady:
+      description: PostgreSQL и RabbitMQ этого сервиса доступны.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReadinessStatus'
+          example:
+            status: ok
+            checks:
+              postgres: up
+              rabbitmq: up
+    ServiceUnavailable:
+      description: Хотя бы одна зависимость сервиса недоступна. Тело — отчёт readiness, не схема Error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReadinessStatus'
+          example:
+            status: unavailable
+            checks:
+              postgres: down
+              rabbitmq: up
+    SystemStatus:
+      description: Фактические пробы пяти бизнес-сервисов.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SystemStatus'
+          example:
+            services:
+              - name: subscriptions
+                live: up
+                ready: up
+              - name: schedule
+                live: up
+                ready: up
+              - name: attendance
+                live: up
+                ready: up
+              - name: transfers
+                live: up
+                ready: up
+              - name: notifications
+                live: up
+                ready: up

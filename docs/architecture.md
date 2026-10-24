@@ -8,6 +8,7 @@
 - [Глоссарий и инварианты](architecture/glossary.md)
 - [Каталог событий](architecture/event-catalog.md)
 - [C4: контекст и контейнеры](architecture/c4.md)
+- [Контракты операций](../packages/contracts/openapi/README.md)
 
 ## Ответственность
 

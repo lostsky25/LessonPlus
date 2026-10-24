@@ -1,0 +1,468 @@
+openapi: 3.0.3
+info:
+  title: LessonPlus schedule
+  version: 0.1.0
+  description: >
+    Владелец преподавателя, группы, занятия, записи и резерва места. Пути /v1 проксирует gateway.
+    Пути /internal/v1 вызывает координатор переноса. LessonCanceledBySchool выпускает этот сервис
+    и своим входящим событием не является.
+  x-implementation-status: designed
+servers:
+  - url: http://schedule:3002
+    description: Имя контейнера в сети Compose. Браузер этот адрес не использует.
+x-accepted-events:
+  - event: TransferRequested
+    effect: Заявка начата. Резерв места, подтверждение записи и освобождение старого места приходят отдельными HTTP-вызовами.
+  - event: LessonRightTransferred
+    effect: Новая привязка зафиксирована. Целевой резерв места не истекает, пока перенос не завершён.
+paths:
+  /health/live:
+    get:
+      operationId: scheduleGetHealthLive
+      x-implementation-status: implemented
+      summary: Процесс запущен
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Live
+  /health/ready:
+    get:
+      operationId: scheduleGetHealthReady
+      x-implementation-status: implemented
+      summary: PostgreSQL и RabbitMQ доступны
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/ServiceReady
+        '503':
+          $ref: ./components.yaml#/components/responses/ServiceUnavailable
+  /v1/lessons:
+    post:
+      operationId: scheduleCreateLesson
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-gateway-path: "/api/v1/lessons"
+      summary: Создать занятие
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/CreateLesson
+      responses:
+        '201':
+          $ref: ./components.yaml#/components/responses/Lesson
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    get:
+      operationId: scheduleListLessons
+      x-implementation-status: designed
+      x-required-roles: [administrator, teacher, parent]
+      x-gateway-path: "/api/v1/lessons"
+      summary: Просмотр расписания
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/GroupIdQuery
+        - $ref: ./components.yaml#/components/parameters/TeacherIdQuery
+        - $ref: ./components.yaml#/components/parameters/FromQuery
+        - $ref: ./components.yaml#/components/parameters/ToQuery
+        - $ref: ./components.yaml#/components/parameters/LessonStatusQuery
+        - $ref: ./components.yaml#/components/parameters/LessonSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/LessonList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/lessons/{lessonId}:
+    get:
+      operationId: scheduleGetLesson
+      x-implementation-status: designed
+      x-required-roles: [administrator, teacher, parent]
+      x-gateway-path: "/api/v1/lessons/{lessonId}"
+      summary: Занятие и свободные места
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/LessonId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Lesson
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    patch:
+      operationId: scheduleUpdateLesson
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-gateway-path: "/api/v1/lessons/{lessonId}"
+      summary: Изменить занятие
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/LessonId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/UpdateLesson
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Lesson
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/lessons/{lessonId}/school-cancellations:
+    post:
+      operationId: scheduleCancelLessonBySchool
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-gateway-path: "/api/v1/lessons/{lessonId}/school-cancellations"
+      summary: Отменить занятие школой
+      description: >
+        Сервис сохраняет операцию и публикует LessonCanceledBySchool. Ответ 202 оставляет эффекты
+        pending. Повтор с новым ключом по уже отменённому занятию — state_conflict reason
+        already_canceled. Прогресс этой операции — GET /v1/school-cancellations/{schoolCancellationId}.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/LessonId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/SchoolCancellation
+      responses:
+        '202':
+          $ref: ./components.yaml#/components/responses/SchoolCancellationAccepted
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/school-cancellations/{schoolCancellationId}:
+    get:
+      operationId: scheduleGetSchoolCancellation
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-gateway-path: "/api/v1/school-cancellations/{schoolCancellationId}"
+      summary: Прогресс отмены школой
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/SchoolCancellationId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/SchoolCancellation
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/lessons/{lessonId}/bookings:
+    post:
+      operationId: scheduleCreateBooking
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-gateway-path: "/api/v1/lessons/{lessonId}/bookings"
+      summary: Запросить запись на занятие
+      description: >
+        Нехватка места даёт state_conflict reason capacity_exceeded и место не создаёт.
+        Прочитанный ранее freeSeatCount эту гонку не закрывает.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/LessonId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/CreateBooking
+      responses:
+        '202':
+          description: Запрос записи принят.
+          content:
+            application/json:
+              schema:
+                $ref: ./components.yaml#/components/schemas/AcceptedOperation
+              example:
+                status: accepted
+                resourceId: 88888888-8888-4888-8888-888888888888
+                statusUrl: /api/v1/bookings/88888888-8888-4888-8888-888888888888
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    get:
+      operationId: scheduleListLessonBookings
+      x-implementation-status: designed
+      x-required-roles: [administrator, teacher]
+      x-gateway-path: "/api/v1/lessons/{lessonId}/bookings"
+      summary: Записи занятия
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/LessonId
+        - $ref: ./components.yaml#/components/parameters/BookingStatusQuery
+        - $ref: ./components.yaml#/components/parameters/IdSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/BookingList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/bookings/{bookingId}:
+    get:
+      operationId: scheduleGetBooking
+      x-implementation-status: designed
+      x-required-roles: [administrator, teacher, parent]
+      x-gateway-path: "/api/v1/bookings/{bookingId}"
+      summary: Состояние записи
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/BookingId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Booking
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/bookings/{bookingId}/cancellations:
+    post:
+      operationId: scheduleCancelBooking
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-gateway-path: "/api/v1/bookings/{bookingId}/cancellations"
+      summary: Отменить запись
+      description: >
+        Обычная отмена. Освобождение исходного места переноса находится в /internal/v1.
+        Прогресс этой отмены — GET /v1/booking-cancellations/{bookingCancellationId}.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/BookingId
+      responses:
+        '202':
+          $ref: ./components.yaml#/components/responses/BookingCancellationAccepted
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/booking-cancellations/{bookingCancellationId}:
+    get:
+      operationId: scheduleGetBookingCancellation
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-gateway-path: "/api/v1/booking-cancellations/{bookingCancellationId}"
+      summary: Прогресс отмены записи
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/BookingCancellationId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/BookingCancellation
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /internal/v1/lessons/{lessonId}/seat-reservations:
+    post:
+      operationId: scheduleReserveSeat
+      x-implementation-status: designed
+      x-required-roles: [transfers]
+      x-gateway-exposed: false
+      summary: Зарезервировать место под перенос
+      description: >
+        Вместимость учитывает подтверждённые записи и действующие резервы. Ответ выдаёт
+        targetBookingId. reason при нехватке места — no_free_seat. Ключ принадлежит этому шагу,
+        не публичной заявке и не блокировке права.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/LessonId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/ReserveSeat
+      responses:
+        '201':
+          $ref: ./components.yaml#/components/responses/SeatReservation
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /internal/v1/seat-reservations/{reservationId}/releases:
+    post:
+      operationId: scheduleReleaseSeatReservation
+      x-implementation-status: designed
+      x-required-roles: [transfers]
+      x-gateway-exposed: false
+      summary: Снять резерв места до новой привязки
+      description: >
+        Компенсация. После LessonRightTransferred вызов получает state_conflict reason binding_fixed.
+        Ключ принадлежит этому шагу, не публичной заявке и не резерву места.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/ReservationId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/ReleaseSeatReservation
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/SeatReservation
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /internal/v1/transfers/{transferId}/booking-confirmations:
+    post:
+      operationId: scheduleConfirmTransferBooking
+      x-implementation-status: designed
+      x-required-roles: [transfers]
+      x-gateway-exposed: false
+      summary: Подтвердить новую запись переноса
+      description: >
+        Шаг после новой привязки права. Привязку этот вызов не создаёт и targetBookingId не меняет.
+        Ключ принадлежит этому шагу, не публичной заявке и не резерву места.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/TransferId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/ConfirmTransferBooking
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Booking
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /internal/v1/bookings/{bookingId}/transfer-releases:
+    post:
+      operationId: scheduleReleaseSourceBooking
+      x-implementation-status: designed
+      x-required-roles: [transfers]
+      x-gateway-exposed: false
+      summary: Освободить исходное место переноса
+      description: >
+        Не обычная отмена. Новую привязку права вызов не снимает. Получатель последующего
+        BookingCanceled — переносы, не абонементы. Ключ принадлежит этому шагу, не публичной
+        отмене записи и не подтверждению новой записи.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/BookingId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/TransferReleaseBooking
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Booking
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Проектируется. Роль transfers — учётная запись сервиса, не пользователь.

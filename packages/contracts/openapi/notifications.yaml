@@ -1,0 +1,115 @@
+openapi: 3.0.3
+info:
+  title: LessonPlus notifications
+  version: 0.1.0
+  description: >
+    Владелец результата доставки. Внешний HTTP-контракт — только чтение.
+    Постановка в доставку и фиксация успеха или неуспеха приходят событиями.
+    Канал — имитация, внешнего получателя нет. Неуспех бизнес-операцию не отменяет.
+  x-implementation-status: designed
+servers:
+  - url: http://notifications:3005
+    description: Имя контейнера в сети Compose. Браузер этот адрес не использует.
+x-accepted-events:
+  - event: SubscriptionActivated
+    effect: Сохранить поручение показать, что абонемент действует.
+  - event: SubscriptionExpired
+    effect: Сохранить поручение показать, что абонемент завершён.
+  - event: LessonRightConsumed
+    effect: Сохранить поручение показать списание.
+  - event: LessonRightRestored
+    effect: Сохранить поручение показать восстановление права.
+  - event: LessonScheduled
+    effect: Сохранить поручение показать новое занятие.
+  - event: LessonCanceledBySchool
+    effect: Сохранить поручение показать отмену школой.
+  - event: BookingConfirmed
+    effect: Вне переноса сохранить поручение о подтверждённой записи.
+  - event: BookingCanceled
+    effect: Вне переноса сохранить поручение об обычной отмене записи.
+  - event: TransferRequested
+    effect: Сохранить поручение о принятой заявке.
+  - event: TransferCompleted
+    effect: Сохранить поручение о завершённом переносе.
+  - event: TransferRejected
+    effect: Сохранить поручение об отказе до новой привязки.
+  - event: AttendanceRecorded
+    effect: Сохранить поручение об окончательном посещении.
+  - event: AbsenceRecorded
+    effect: Сохранить поручение об отсутствии.
+paths:
+  /health/live:
+    get:
+      operationId: notificationsGetHealthLive
+      x-implementation-status: implemented
+      summary: Процесс запущен
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Live
+  /health/ready:
+    get:
+      operationId: notificationsGetHealthReady
+      x-implementation-status: implemented
+      summary: PostgreSQL и RabbitMQ доступны
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/ServiceReady
+        '503':
+          $ref: ./components.yaml#/components/responses/ServiceUnavailable
+  /v1/notifications:
+    get:
+      operationId: notificationsListNotifications
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent, teacher]
+      x-gateway-path: "/api/v1/notifications"
+      summary: Состояния доставки
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/StudentIdQuery
+        - $ref: ./components.yaml#/components/parameters/SubjectTypeQuery
+        - $ref: ./components.yaml#/components/parameters/SubjectIdQuery
+        - $ref: ./components.yaml#/components/parameters/NotificationStatusQuery
+        - $ref: ./components.yaml#/components/parameters/NotificationSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/NotificationList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/notifications/{notificationId}:
+    get:
+      operationId: notificationsGetNotification
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent, teacher]
+      x-gateway-path: "/api/v1/notifications/{notificationId}"
+      summary: Состояние одной доставки
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/NotificationId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Notification
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Проектируется. В каркасе проверка JWT и ролей не выполняется.

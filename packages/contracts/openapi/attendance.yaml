@@ -1,0 +1,179 @@
+openapi: 3.0.3
+info:
+  title: LessonPlus attendance
+  version: 0.1.0
+  description: >
+    Владелец отметки. Остаток прав не меняет. Окончательное посещение записывает после
+    LessonRightConsumed. HTTP-команды списания у абонементов нет.
+  x-implementation-status: designed
+servers:
+  - url: http://attendance:3003
+    description: Имя контейнера в сети Compose. Браузер этот адрес не использует.
+x-accepted-events:
+  - event: LessonRightConsumed
+    effect: Зафиксировать окончательное посещение. До этого события отметка присутствия не окончательна.
+  - event: LessonRightRestored
+    effect: Учесть возврат права при исправлении. Само восстановление выполняет только абонементы.
+  - event: LessonCanceledBySchool
+    effect: Занятие отменено школой. Отметка это событие не превращает в перенос и право не списывает.
+paths:
+  /health/live:
+    get:
+      operationId: attendanceGetHealthLive
+      x-implementation-status: implemented
+      summary: Процесс запущен
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Live
+  /health/ready:
+    get:
+      operationId: attendanceGetHealthReady
+      x-implementation-status: implemented
+      summary: PostgreSQL и RabbitMQ доступны
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/ServiceReady
+        '503':
+          $ref: ./components.yaml#/components/responses/ServiceUnavailable
+  /v1/attendance-registrations:
+    post:
+      operationId: attendanceRegisterAttendance
+      x-implementation-status: designed
+      x-required-roles: [teacher]
+      x-gateway-path: "/api/v1/attendance-registrations"
+      summary: Запросить регистрацию посещения или отсутствия
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/RegisterAttendance
+      responses:
+        '202':
+          description: Запрос регистрации принят.
+          content:
+            application/json:
+              schema:
+                $ref: ./components.yaml#/components/schemas/AcceptedOperation
+              example:
+                status: accepted
+                resourceId: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+                statusUrl: /api/v1/attendance-registrations/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/attendance-registrations/{registrationId}:
+    get:
+      operationId: attendanceGetAttendanceRegistration
+      x-implementation-status: designed
+      x-required-roles: [teacher, administrator]
+      x-gateway-path: "/api/v1/attendance-registrations/{registrationId}"
+      summary: Состояние регистрации посещения
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/RegistrationId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/AttendanceRegistration
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/attendances/{attendanceId}/corrections:
+    post:
+      operationId: attendanceCorrectAttendance
+      x-implementation-status: designed
+      x-required-roles: [teacher]
+      x-gateway-path: "/api/v1/attendances/{attendanceId}/corrections"
+      summary: Исправить окончательную отметку
+      description: >
+        Прогресс принятого исправления — GET /v1/attendance-corrections/{attendanceCorrectionId}.
+        Текущая отметка этот ресурс не заменяет.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/AttendanceId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/CorrectAttendance
+      responses:
+        '202':
+          $ref: ./components.yaml#/components/responses/AttendanceCorrectionAccepted
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/attendance-corrections/{attendanceCorrectionId}:
+    get:
+      operationId: attendanceGetAttendanceCorrection
+      x-implementation-status: designed
+      x-required-roles: [teacher, administrator]
+      x-gateway-path: "/api/v1/attendance-corrections/{attendanceCorrectionId}"
+      summary: Прогресс исправления посещения
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/AttendanceCorrectionId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/AttendanceCorrection
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/attendances/{attendanceId}:
+    get:
+      operationId: attendanceGetAttendance
+      x-implementation-status: designed
+      x-required-roles: [teacher, administrator]
+      x-gateway-path: "/api/v1/attendances/{attendanceId}"
+      summary: Окончательная отметка
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/AttendanceId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Attendance
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Проектируется. В каркасе проверка JWT и ролей не выполняется.

@@ -1,0 +1,269 @@
+openapi: 3.0.3
+info:
+  title: LessonPlus subscriptions
+  version: 0.1.0
+  description: >
+    Владелец ученика, тарифа, абонемента и права. Пути /v1 проксирует gateway.
+    Пути /internal/v1 вызывает только координатор переноса. Списание приходит событием
+    AttendanceRegistrationRequested, HTTP-метода у него нет.
+  x-implementation-status: designed
+servers:
+  - url: http://subscriptions:3001
+    description: Имя контейнера в сети Compose. Браузер этот адрес не использует.
+x-accepted-events:
+  - event: AttendanceRegistrationRequested
+    effect: Списать неиспользованное право один раз. Повтор event_id второе списание не выполняет.
+  - event: TransferRequested
+    effect: Заявка принята. Блокировку права выполняет отдельный HTTP-вызов, не это событие.
+  - event: LessonCanceledBySchool
+    effect: Сохранить право. Отмена школой право не списывает.
+  - event: BookingConfirmed
+    effect: Вне переноса связать право с записью, если действующей привязки к другой записи нет.
+  - event: BookingCanceled
+    effect: Снять привязку, только если она ещё указывает на эту запись. Отмена исходной записи переноса сюда не приходит.
+paths:
+  /health/live:
+    get:
+      operationId: subscriptionsGetHealthLive
+      x-implementation-status: implemented
+      summary: Процесс запущен
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Live
+  /health/ready:
+    get:
+      operationId: subscriptionsGetHealthReady
+      x-implementation-status: implemented
+      summary: PostgreSQL и RabbitMQ доступны
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/ServiceReady
+        '503':
+          $ref: ./components.yaml#/components/responses/ServiceUnavailable
+  /v1/subscriptions:
+    post:
+      operationId: subscriptionsActivateSubscription
+      x-implementation-status: designed
+      x-required-roles: [administrator]
+      x-gateway-path: "/api/v1/subscriptions"
+      summary: Активировать абонемент
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/ActivateSubscription
+      responses:
+        '201':
+          $ref: ./components.yaml#/components/responses/Subscription
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    get:
+      operationId: subscriptionsListSubscriptions
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-gateway-path: "/api/v1/subscriptions"
+      summary: Список абонементов
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/StudentIdQuery
+        - $ref: ./components.yaml#/components/parameters/SubscriptionStatusQuery
+        - $ref: ./components.yaml#/components/parameters/SubscriptionSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/SubscriptionList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/subscriptions/{subscriptionId}:
+    get:
+      operationId: subscriptionsGetSubscription
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-gateway-path: "/api/v1/subscriptions/{subscriptionId}"
+      summary: Просмотр абонемента
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/SubscriptionId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Subscription
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/subscriptions/{subscriptionId}/rights:
+    get:
+      operationId: subscriptionsListSubscriptionRights
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-gateway-path: "/api/v1/subscriptions/{subscriptionId}/rights"
+      summary: Права абонемента
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/SubscriptionId
+        - $ref: ./components.yaml#/components/parameters/RightStatusQuery
+        - $ref: ./components.yaml#/components/parameters/IdSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/LessonRightList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/rights/{rightId}:
+    get:
+      operationId: subscriptionsGetRight
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-gateway-path: "/api/v1/rights/{rightId}"
+      summary: Просмотр права
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/RightId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/LessonRight
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /internal/v1/rights/{rightId}/reservations:
+    post:
+      operationId: subscriptionsReserveRight
+      x-implementation-status: designed
+      x-required-roles: [transfers]
+      x-gateway-exposed: false
+      summary: Заблокировать неиспользованное право
+      description: >
+        Первый шаг переноса. Право не должно быть consumed. Повтор того же ключа не создаёт второй
+        резерв. reason при конфликте — right_consumed или right_not_available. Ключ идемпотентности
+        принадлежит этому шагу заявки, не публичному POST /v1/transfers и не другому шагу.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/RightId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/ReserveRight
+      responses:
+        '201':
+          $ref: ./components.yaml#/components/responses/RightReservation
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /internal/v1/rights/{rightId}/reservations/{reservationId}/releases:
+    post:
+      operationId: subscriptionsReleaseRightReservation
+      x-implementation-status: designed
+      x-required-roles: [transfers]
+      x-gateway-exposed: false
+      summary: Снять блокировку права до новой привязки
+      description: >
+        Компенсация. После перепривязки вызов получает state_conflict reason binding_fixed.
+        Ключ принадлежит этому шагу, не публичной заявке и не вызову блокировки права.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/RightId
+        - $ref: ./components.yaml#/components/parameters/ReservationId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/ReleaseRightReservation
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/LessonRight
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /internal/v1/rights/{rightId}/rebindings:
+    post:
+      operationId: subscriptionsRebindRight
+      x-implementation-status: designed
+      x-required-roles: [transfers]
+      x-gateway-exposed: false
+      summary: Зафиксировать новую привязку права
+      description: >
+        После успеха перенос доводят до конца. Целевой резерв места с этого момента не истекает.
+        Привязка указывает на targetBookingId, выданный при резерве места. Ключ принадлежит этому
+        шагу, не публичной заявке и не резерву права.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+        - $ref: ./components.yaml#/components/parameters/RightId
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/RebindRight
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/LessonRight
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Проектируется. Роль transfers — учётная запись сервиса, не пользователь.

@@ -1,0 +1,139 @@
+openapi: 3.0.3
+info:
+  title: LessonPlus transfers
+  version: 0.1.0
+  description: >
+    Координатор заявки. Правом и местом не владеет и чужие таблицы не читает.
+    Публичный POST только принимает заявку. Шаги владельцев — внутренние HTTP-вызовы,
+    описанные в subscriptions.yaml и schedule.yaml.
+  x-implementation-status: designed
+servers:
+  - url: http://transfers:3004
+    description: Имя контейнера в сети Compose. Браузер этот адрес не использует.
+x-accepted-events:
+  - event: LessonRightReserved
+    effect: Исходное право заблокировано. Можно переходить к резерву места.
+  - event: TransferSeatReserved
+    effect: Целевое место удержано.
+  - event: LessonRightTransferred
+    effect: Новая привязка зафиксирована. Дальше заявку завершают, компенсация уже запрещена.
+  - event: BookingConfirmed
+    effect: В ходе переноса это подтверждение новой записи, а не создание привязки.
+  - event: BookingCanceled
+    effect: Освобождено исходное место этой заявки. Новую привязку событие не снимает.
+  - event: LessonRightReleased
+    effect: Блокировка права снята при компенсации до новой привязки.
+  - event: SubscriptionExpired
+    effect: Новую заявку на права этого абонемента не принимать.
+  - event: LessonCanceledBySchool
+    effect: Занятие отменено школой. Лимит пользовательских переносов не расходовать.
+paths:
+  /health/live:
+    get:
+      operationId: transfersGetHealthLive
+      x-implementation-status: implemented
+      summary: Процесс запущен
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Live
+  /health/ready:
+    get:
+      operationId: transfersGetHealthReady
+      x-implementation-status: implemented
+      summary: PostgreSQL и RabbitMQ доступны
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/ServiceReady
+        '503':
+          $ref: ./components.yaml#/components/responses/ServiceUnavailable
+  /v1/transfers:
+    post:
+      operationId: transfersRequestTransfer
+      x-implementation-status: designed
+      x-required-roles: [parent, administrator]
+      x-gateway-path: "/api/v1/transfers"
+      summary: Запросить перенос
+      description: >
+        Перед 202 сервис сохраняет заявку в своей схеме. Недоступность своей базы — 503.
+        Недоступность абонементов или расписания после сохранения оставляет заявку принятой.
+        reason отказа появляются в GET и только до новой привязки.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        $ref: ./components.yaml#/components/requestBodies/RequestTransfer
+      responses:
+        '202':
+          description: Заявка принята в обработку.
+          content:
+            application/json:
+              schema:
+                $ref: ./components.yaml#/components/schemas/AcceptedOperation
+              example:
+                status: accepted
+                resourceId: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+                statusUrl: /api/v1/transfers/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '409':
+          $ref: ./components.yaml#/components/responses/Conflict
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+    get:
+      operationId: transfersListTransfers
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-gateway-path: "/api/v1/transfers"
+      summary: Список заявок на перенос
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/StudentIdQuery
+        - $ref: ./components.yaml#/components/parameters/TransferStatusQuery
+        - $ref: ./components.yaml#/components/parameters/TransferSort
+        - $ref: ./components.yaml#/components/parameters/Limit
+        - $ref: ./components.yaml#/components/parameters/Cursor
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/TransferList
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+  /v1/transfers/{transferId}:
+    get:
+      operationId: transfersGetTransfer
+      x-implementation-status: designed
+      x-required-roles: [administrator, parent]
+      x-gateway-path: "/api/v1/transfers/{transferId}"
+      summary: Результат заявки на перенос
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: ./components.yaml#/components/parameters/TransferId
+      responses:
+        '200':
+          $ref: ./components.yaml#/components/responses/Transfer
+        '400':
+          $ref: ./components.yaml#/components/responses/InvalidRequest
+        '401':
+          $ref: ./components.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./components.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./components.yaml#/components/responses/NotFound
+        '503':
+          $ref: ./components.yaml#/components/responses/DependencyUnavailable
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Проектируется. В каркасе проверка JWT и ролей не выполняется.
