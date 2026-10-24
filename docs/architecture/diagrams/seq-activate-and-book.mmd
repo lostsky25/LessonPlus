@@ -1,0 +1,33 @@
+%% Последовательность. Проект: активация абонемента и обычная запись.
+%% Сплошных бизнес-вызовов в каркасе нет.
+sequenceDiagram
+  autonumber
+  actor Admin as Администратор
+  participant Gw as api-gateway
+  participant Sub as subscriptions
+  participant Sch as schedule
+  participant Mq as RabbitMQ
+  participant Nt as notifications
+
+  Admin->>Gw: POST /api/v1/subscriptions
+  Gw->>Sub: POST /v1/subscriptions
+  Sub-->>Gw: 201 Subscription
+  Note over Sub: outbox SubscriptionActivated
+  Sub->>Mq: публикация с confirms
+  Mq->>Nt: поручение имитации
+  Nt-->>Nt: NotificationDelivered или NotificationDeliveryFailed, отката нет
+
+  Admin->>Gw: POST /api/v1/lessons/{lessonId}/bookings
+  Gw->>Sch: POST /v1/lessons/{lessonId}/bookings
+  Sch-->>Gw: 202 AcceptedOperation status=accepted
+  Note over Sch: GET /v1/bookings/{bookingId} и /api/v1/bookings/{bookingId}
+  Sch-->>Sch: seatStatus может стать confirmed
+  Note over Sch: outbox BookingConfirmed, transferId=null
+  Sch->>Mq: BookingConfirmed
+  Mq->>Sub: вне переноса: попытка связать право
+  alt привязка принята
+    Sub-->>Sub: LessonRight status=bound
+  else привязка отклонена
+    Note over Sub,Sch: место уже confirmed, согласование отказа и освобождения не закрыто контрактами
+  end
+  Mq->>Nt: имитация

@@ -1,0 +1,26 @@
+%% Последовательность. Проект: отмена занятия школой.
+sequenceDiagram
+  autonumber
+  actor Admin as Администратор
+  participant Gw as api-gateway
+  participant Sch as schedule
+  participant Mq as RabbitMQ
+  participant Sub as subscriptions
+  participant Tr as transfers
+  participant Att as attendance
+  participant Nt as notifications
+
+  Admin->>Gw: POST /api/v1/lessons/{lessonId}/school-cancellations
+  Gw->>Sch: POST /v1/lessons/{lessonId}/school-cancellations
+  Sch-->>Gw: 202 SchoolCancellation status=accepted
+  Note over Sch: lessonEffect, rightEffect, transferLimitEffect = pending
+  Note over Sch: GET /v1/school-cancellations/{schoolCancellationId}
+  Note over Sch: outbox LessonCanceledBySchool, это не completed HTTP
+  Sch->>Mq: LessonCanceledBySchool
+
+  Mq->>Sub: сохранить право, не списывать
+  Mq->>Tr: лимит пользовательских переносов не тратить
+  Mq->>Att: не проводить как пользовательский перенос
+  Mq->>Nt: имитация
+
+  Note over Sch: GET операции может остаться in_progress: сигнал rightEffect и transferLimitEffect не закрыт

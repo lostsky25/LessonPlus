@@ -1,0 +1,31 @@
+%% Последовательность. Проект: повтор HTTP-команды и повтор события.
+sequenceDiagram
+  autonumber
+  participant Tr as transfers
+  participant Sub as subscriptions
+  participant Sch as schedule
+  participant Mq as RabbitMQ
+  participant Att as attendance
+
+  Note over Tr,Sub: Таймаут POST /internal/v1/rights/{rightId}/reservations
+  Tr->>Sub: POST /internal/v1/rights/{rightId}/reservations
+  Sub--x Tr: таймаут, исход неизвестен
+  Tr->>Sub: тот же Idempotency-Key шага, без нового ключа
+  Sub-->>Tr: сохранённый 201 RightReservation
+
+  Note over Tr,Sch: Таймаут POST /internal/v1/lessons/{lessonId}/seat-reservations
+  Tr->>Sch: POST /internal/v1/lessons/{lessonId}/seat-reservations
+  Sch--x Tr: таймаут, резерв мог быть создан
+  Tr->>Sch: тот же Idempotency-Key шага, без нового ключа
+  Sch-->>Tr: сохранённый 201, reservationId известен
+  Note over Tr: release только после известного reservationId
+
+  Note over Mq,Att: Повтор доставки того же факта
+  Mq->>Att: LessonRightConsumed event_id=E
+  Att-->>Att: обработать, processed_events.id=E
+  Mq->>Att: redelivery event_id=E
+  Att-->>Att: ack без второй отметки
+
+  Note over Mq,Sub: Новый HTTP посещения, другой ключ
+  Mq->>Sub: AttendanceRegistrationRequested, другой registrationId, тот же bookingId
+  Sub-->>Sub: второе списание запрещено

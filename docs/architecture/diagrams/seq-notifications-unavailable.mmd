@@ -1,0 +1,21 @@
+%% Последовательность. Проект: уведомления недоступны, бизнес-результат независим.
+sequenceDiagram
+  autonumber
+  participant Sub as subscriptions
+  participant Mq as RabbitMQ
+  participant Nt as notifications
+
+  Sub-->>Sub: абонемент active, outbox SubscriptionActivated
+  Sub->>Mq: публикация с confirms
+  Note over Mq: очередь notifications durable
+  Nt--x Nt: процесс недоступен
+  Note over Sub: операция уже завершена у владельца
+
+  Nt->>Mq: позднее потребление того же event_id
+  Nt-->>Nt: имитация канала
+  alt доставка имитации не удалась
+    Nt->>Mq: NotificationDeliveryFailed
+    Note over Sub: получателей нет, отката нет
+  else доставка имитации удалась
+    Nt->>Mq: NotificationDelivered
+  end

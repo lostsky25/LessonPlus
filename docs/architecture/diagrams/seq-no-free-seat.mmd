@@ -1,0 +1,27 @@
+%% Последовательность. Проект: подтверждённый 409 no_free_seat, компенсация до commit привязки.
+%% Таймаут seat-reservations сюда не входит: резерв мог быть создан, см. seq-retry.
+sequenceDiagram
+  autonumber
+  participant Tr as transfers
+  participant Sub as subscriptions
+  participant Sch as schedule
+  participant Mq as RabbitMQ
+  participant Nt as notifications
+
+  Tr->>Sub: POST /internal/v1/rights/{rightId}/reservations
+  Sub-->>Tr: 201 RightReservation status=active
+  Sub->>Mq: LessonRightReserved status=reserved
+  Note over Sub: sourceBookingId сохраняет исходную запись, статус права не bound
+
+  Tr->>Sch: POST /internal/v1/lessons/{lessonId}/seat-reservations
+  Sch-->>Tr: 409 state_conflict reason=no_free_seat
+  Note over Sch: подтверждённо: reservationId нет, release места не вызывать
+
+  Tr->>Sub: POST /internal/v1/rights/{rightId}/reservations/{reservationId}/releases
+  Sub-->>Tr: 200 LessonRight status=bound
+  Sub->>Mq: LessonRightReleased status=bound, reservationStatus=released
+  Note over Sub: bookingId=sourceBookingId
+
+  Tr->>Mq: TransferRejected
+  Mq->>Nt: имитация
+  Note over Nt: отказ доставки заявку не меняет

@@ -24,7 +24,7 @@ HTTP-команды OpenAPI в этот список не входят. Соот
 | `LessonRightReleased` | Переносы | Снятие блокировки права при компенсации до фиксации новой привязки | [LessonRightReleased.json](../../packages/contracts/events/examples/LessonRightReleased.json) |
 | `LessonRightConsumed` | Посещения, Уведомления | Списание подтверждено. Посещения после этого фиксируют окончательный результат | [LessonRightConsumed.json](../../packages/contracts/events/examples/LessonRightConsumed.json) |
 | `LessonRightRestored` | Посещения, Уведомления | Списанное право возвращено в остаток | [LessonRightRestored.json](../../packages/contracts/events/examples/LessonRightRestored.json) |
-| `LessonRightTransferred` | Переносы, Расписание | Новая привязка права зафиксирована. После этого перенос доводят до конца, а целевой резерв места не истекает. Уведомление об итоге идёт отдельным событием заявки | [LessonRightTransferred.json](../../packages/contracts/events/examples/LessonRightTransferred.json) |
+| `LessonRightTransferred` | Переносы, Расписание | Новая привязка права зафиксирована (commit у абонементов). Перенос доводят до конца, компенсация запрещена. Событие само по себе не защищает целевой резерв от TTL | [LessonRightTransferred.json](../../packages/contracts/events/examples/LessonRightTransferred.json) |
 
 Только «Абонементы» выпускают события резерва, списания, восстановления и перепривязки права.
 
@@ -76,7 +76,7 @@ HTTP-команды OpenAPI в этот список не входят. Соот
 Проектируется, не реализовано.
 
 1. Посещение: «Посещения» публикуют `AttendanceRegistrationRequested`. «Абонементы» списывают право и публикуют `LessonRightConsumed`. Только затем «Посещения» публикуют `AttendanceRecorded`.
-2. Перенос, только как проект и без алгоритма. Порядок: блокировка исходного неиспользованного права (`LessonRightReserved`) → резерв целевого места (`TransferSeatReserved`) → фиксация новой привязки (`LessonRightTransferred`) → подтверждение новой записи (`BookingConfirmed`) → освобождение исходного места (`BookingCanceled` исходной записи) → `TransferCompleted`. До фиксации новой привязки допустимы компенсации: снять целевой резерв, снять блокировку права и опубликовать `TransferRejected`. После фиксации операцию доводят до конца, целевой резерв от истечения защищён. Освобождение исходного места не является обычной отменой и не снимает новую привязку.
+2. Перенос, только как проект и без алгоритма. Порядок: блокировка исходного неиспользованного права (`LessonRightReserved`) → резерв целевого места (`TransferSeatReserved`) → commit новой привязки (`LessonRightTransferred` публикуется после commit) → подтверждение новой записи (`BookingConfirmed`) → освобождение исходного места (`BookingCanceled` исходной записи) → `TransferCompleted`. До commit допустимы компенсации: снять целевой резерв, снять блокировку права и опубликовать `TransferRejected`. После commit операцию доводят до конца, компенсация запрещена. Инвариант: целевой резерв должен быть защищён от истечения; доставка `LessonRightTransferred` этот инвариант не обеспечивает. Освобождение исходного места не является обычной отменой и не снимает новую привязку. Подробности и гонка TTL — в [interactions.md](interactions.md).
 3. Отмена школой: источник — `LessonCanceledBySchool` у «Расписания». Дальше право сохраняется, пользовательский лимит переносов не тратится.
 
 Повтор события с тем же `event_id` проектируется как уже обработанный через `processed_events`. Сейчас потребитель, который это делает, не запущен.

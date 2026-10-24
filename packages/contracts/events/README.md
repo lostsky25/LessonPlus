@@ -65,7 +65,7 @@ Payload использует camelCase идентификаторов OpenAPI (`
 | subscriptions | `LessonCanceledBySchool` | `event_id` | Право не списывать повторно и не уничтожать |
 | subscriptions | `TransferRequested` | `event_id` | Саму блокировку делает HTTP, не это событие |
 | schedule | `TransferRequested` | `event_id` | Резерв места — отдельный HTTP-шаг |
-| schedule | `LessonRightTransferred` | `event_id` | Целевой резерв этой `transferId` не истекает |
+| schedule | `LessonRightTransferred` | `event_id` | Узнать о commit привязки. Защита резерва от TTL этим фактом не гарантирована |
 | attendance | `LessonRightConsumed` | `event_id` | Одна окончательная отметка на `bookingId`; `attendanceId` выдаётся этой сущности |
 | attendance | `LessonRightRestored` | `event_id` | Исправление учитывает возврат права; само восстановление не делает |
 | attendance | `LessonCanceledBySchool` | `event_id` | Не проводить как пользовательский перенос |
@@ -162,7 +162,7 @@ HTTP-операции OpenAPI — команды. Их нет в списке 20
 | `POST /v1/subscriptions` | `SubscriptionActivated` |
 | Истечение по параметрам тарифа, внешнего метода нет | `SubscriptionExpired` |
 | `POST /internal/v1/rights/{rightId}/reservations` | `LessonRightReserved` |
-| `POST .../reservations/{reservationId}/releases` | `LessonRightReleased` |
+| `POST /internal/v1/rights/{rightId}/reservations/{reservationId}/releases` | `LessonRightReleased` |
 | `POST /internal/v1/rights/{rightId}/rebindings` | `LessonRightTransferred` |
 | Списание по `AttendanceRegistrationRequested` | `LessonRightConsumed` |
 | Восстановление при исправлении | `LessonRightRestored` |

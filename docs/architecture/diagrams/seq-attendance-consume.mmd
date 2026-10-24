@@ -1,0 +1,26 @@
+%% Последовательность. Проект: посещение и списание присутствия.
+sequenceDiagram
+  autonumber
+  actor Teacher as Преподаватель
+  participant Gw as api-gateway
+  participant Att as attendance
+  participant Mq as RabbitMQ
+  participant Sub as subscriptions
+  participant Nt as notifications
+
+  Teacher->>Gw: POST /api/v1/attendance-registrations
+  Gw->>Att: POST /v1/attendance-registrations
+  Att-->>Gw: 202 AcceptedOperation status=accepted
+  Note over Att: GET /v1/attendance-registrations/{registrationId}<br/>сущность может быть status=pending
+  Note over Att: outbox AttendanceRegistrationRequested
+  Att->>Mq: асинхронная команда списания
+  Mq->>Sub: AttendanceRegistrationRequested
+  Sub-->>Sub: списать один раз на rightId и bookingId
+  Note over Sub: outbox LessonRightConsumed, status=consumed
+  Sub->>Mq: LessonRightConsumed
+  Mq->>Att: подтверждение списания
+  Att-->>Att: одна окончательная отметка на bookingId
+  Note over Att: outbox AttendanceRecorded
+  Att->>Mq: AttendanceRecorded
+  Mq->>Nt: имитация
+  Note over Nt: сбой доставки отметку не отменяет

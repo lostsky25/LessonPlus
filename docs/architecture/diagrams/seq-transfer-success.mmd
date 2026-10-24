@@ -1,0 +1,48 @@
+%% Последовательность. Проект: успешный перенос.
+%% Граница компенсации: commit новой привязки у subscriptions, не HTTP 200 и не доставка события.
+sequenceDiagram
+  autonumber
+  actor Parent as Родитель
+  participant Gw as api-gateway
+  participant Tr as transfers
+  participant Sub as subscriptions
+  participant Sch as schedule
+  participant Mq as RabbitMQ
+
+  Parent->>Gw: POST /api/v1/transfers
+  Gw->>Tr: POST /v1/transfers
+  Tr-->>Gw: 202 AcceptedOperation status=accepted
+  Note over Tr: GET /v1/transfers/{transferId} и /api/v1/transfers/{transferId}
+  Tr->>Mq: TransferRequested
+
+  Tr->>Sub: POST /internal/v1/rights/{rightId}/reservations
+  Sub-->>Tr: 201 RightReservation status=active
+  Sub->>Mq: LessonRightReserved status=reserved
+  Note over Sub: исходная запись сохраняется как sourceBookingId, статус права reserved
+
+  Tr->>Sch: POST /internal/v1/lessons/{lessonId}/seat-reservations
+  Sch-->>Tr: 201 SeatReservation status=active, targetBookingId
+  Sch->>Mq: TransferSeatReserved status=active
+
+  rect rgb(255, 244, 220)
+    Note over Tr,Sub: Граница = commit rebindings в subscriptions
+    Tr->>Sub: POST /internal/v1/rights/{rightId}/rebindings
+    alt ответ потерян
+      Note over Tr: исход неизвестен: только повтор того же ключа, release параллельно нельзя
+      Tr->>Sub: POST /internal/v1/rights/{rightId}/rebindings тем же ключом
+    end
+    Sub-->>Tr: 200 LessonRight status=bound
+    Sub->>Mq: LessonRightTransferred
+  end
+
+  Note over Sch: доставка события не закрывает окно TTL до применения защиты
+  Tr->>Sch: POST /internal/v1/transfers/{transferId}/booking-confirmations
+  Sch-->>Tr: 200 Booking seatStatus=confirmed
+  Sch->>Mq: BookingConfirmed transferId задан
+
+  Tr->>Sch: POST /internal/v1/bookings/{bookingId}/transfer-releases
+  Sch-->>Tr: 200 Booking seatStatus=canceled
+  Sch->>Mq: BookingCanceled cause=transfer_source_release
+  Note over Sub: новую привязку не снимать
+
+  Tr->>Mq: TransferCompleted
