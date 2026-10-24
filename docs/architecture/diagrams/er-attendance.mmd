@@ -1,0 +1,55 @@
+%% ER. Проект схемы attendance. Набор полей сокращён; имена совпадают с ddl/attendance.sql.
+%% Канон: registration_id — 0..1 отметка на регистрацию (UNIQUE registration_id), отметка всегда ссылается на одну регистрацию.
+%% attendance_id на регистрации — nullable обратный указатель, не вторая кардинальность 1..N; сверка в 03-data-model.md.
+%% booking/student/lesson/right — составной FK, не одиночный.
+erDiagram
+  attendance_registrations ||--o| attendances : "registration_id"
+  attendances ||--o{ attendance_corrections : "исправления"
+  attendance_registrations {
+    uuid id PK
+    uuid booking_id
+    uuid student_id
+    uuid lesson_id
+    uuid right_id
+    text mark
+    text status
+    text right_effect
+    uuid attendance_id "nullable указатель"
+  }
+  attendances {
+    uuid id PK
+    uuid registration_id FK
+    uuid booking_id "unique"
+    uuid student_id
+    uuid lesson_id
+    uuid right_id
+    text mark
+    text status
+    text right_effect
+  }
+  attendance_corrections {
+    uuid id PK
+    uuid attendance_id FK
+    uuid source_registration_id FK
+    uuid consumed_registration_id "логич."
+    text requested_mark
+    text status
+    text previous_mark
+    text new_mark
+    text previous_right_effect
+    text new_right_effect
+    timestamptz applied_at
+  }
+  outbox_events {
+    uuid id PK
+  }
+  processed_events {
+    uuid id PK
+  }
+  http_idempotency_keys {
+    uuid id PK
+    text actor_kind
+    text method
+    text path_template
+    text idempotency_key
+  }

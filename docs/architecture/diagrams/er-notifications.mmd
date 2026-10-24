@@ -1,0 +1,26 @@
+%% ER. Проект схемы notifications. Набор полей сокращён; имена совпадают с ddl/notifications.sql.
+%% student_id и subject_id — логические. UNIQUE (source_event_id, student_id, channel): несколько поручений на один факт.
+erDiagram
+  notifications ||--o{ notification_delivery_attempts : "попытки"
+  notifications {
+    uuid id PK
+    uuid student_id "логич."
+    text subject_type
+    uuid subject_id "логич."
+    uuid source_event_id
+    text status
+    text channel
+    timestamptz recorded_at
+  }
+  notification_delivery_attempts {
+    uuid id PK
+    uuid notification_id FK
+    int attempt_no
+    text result
+  }
+  outbox_events {
+    uuid id PK
+  }
+  processed_events {
+    uuid id PK
+  }

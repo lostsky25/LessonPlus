@@ -1,0 +1,59 @@
+%% ER. Проект схемы transfers. Набор полей сокращён; имена совпадают с ddl/transfers.sql.
+%% Ссылки на право, записи, занятия и резервы — логические. Связь правил — transfers.rule_id FK.
+%% http_idempotency_keys — только входящий POST /v1/transfers, не внутренние шаги владельцев.
+erDiagram
+  transfer_rules ||--o{ transfers : "rule_id"
+  transfers ||--o{ transfer_outbound_steps : "исходящие шаги"
+  transfer_outbound_steps ||--o{ transfer_outbound_attempts : "попытки"
+  transfer_rules {
+    uuid id PK
+    boolean school_cancel_spends_user_limit
+    int notice_period_hours
+  }
+  transfers {
+    uuid id PK
+    uuid rule_id FK
+    uuid student_id "логич."
+    uuid right_id "логич."
+    uuid source_booking_id "логич."
+    uuid target_lesson_id "логич."
+    uuid target_booking_id "логич."
+    uuid right_reservation_id "логич."
+    uuid seat_reservation_id "логич."
+    text binding_knowledge
+    timestamptz binding_committed_at
+    text current_step
+    text status
+  }
+  transfer_outbound_steps {
+    uuid id PK
+    uuid transfer_id FK
+    text step
+    text owner_service
+    text actor_kind
+    text actor_id
+    text method
+    text path_template
+    text idempotency_key
+    text fingerprint
+  }
+  transfer_outbound_attempts {
+    uuid id PK
+    uuid step_id FK
+    int attempt_no
+    text outcome
+  }
+  outbox_events {
+    uuid id PK
+  }
+  processed_events {
+    uuid id PK
+  }
+  http_idempotency_keys {
+    uuid id PK
+    text actor_kind
+    text method
+    text path_template
+    text idempotency_key
+    text fingerprint
+  }

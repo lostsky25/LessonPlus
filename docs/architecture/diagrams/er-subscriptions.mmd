@@ -1,0 +1,79 @@
+%% ER. Проект схемы subscriptions. Набор полей сокращён; имена совпадают с ddl/subscriptions.sql.
+%% FK только внутри схемы. student_id на праве — часть составного FK на абонемент, не второй справочник.
+%% consumed_operation_id — nullable self-FK: 0..1 родитель и 0..1 потомок; NOT NULL только у kind=restored.
+erDiagram
+  students ||--o{ subscriptions : "абонементы"
+  tariffs ||--o{ subscriptions : "тариф"
+  subscriptions ||--|{ lesson_rights : "права"
+  lesson_rights ||--o{ right_reservations : "резервы"
+  lesson_rights ||--o{ right_operations : "журнал"
+  right_operations |o--o| right_operations : "consumed_operation_id nullable"
+  students {
+    uuid id PK
+    text display_name
+    text parent_name
+    text parent_email
+    text parent_phone
+  }
+  tariffs {
+    uuid id PK
+    int lesson_count
+    int validity_days
+    int transfer_limit
+    int notice_period_hours
+  }
+  subscriptions {
+    uuid id PK
+    uuid student_id FK
+    uuid tariff_id FK
+    text status
+    timestamptz activated_at
+    timestamptz expires_at
+  }
+  lesson_rights {
+    uuid id PK
+    uuid subscription_id FK
+    uuid student_id FK
+    text status
+    uuid booking_id "логич. только bound"
+    uuid transfer_id "логич. только reserved"
+  }
+  right_reservations {
+    uuid id PK
+    uuid right_id FK
+    uuid transfer_id "логич."
+    uuid source_booking_id "логич."
+    text status
+    text close_reason
+    timestamptz created_at
+    timestamptz released_at
+  }
+  right_operations {
+    uuid id PK
+    uuid right_id FK
+    text kind
+    uuid booking_id
+    uuid lesson_id
+    uuid registration_id
+    uuid consumed_operation_id "nullable FK"
+    uuid attendance_correction_id "логич."
+    uuid event_id
+  }
+  outbox_events {
+    uuid id PK
+    text event_type
+    timestamptz published_at
+  }
+  processed_events {
+    uuid id PK
+    timestamptz processed_at
+  }
+  http_idempotency_keys {
+    uuid id PK
+    text actor_kind
+    text actor_id
+    text method
+    text path_template
+    text idempotency_key
+    text fingerprint
+  }

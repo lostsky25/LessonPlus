@@ -1,0 +1,82 @@
+%% ER. Проект схемы schedule. Набор полей сокращён; имена совпадают с ddl/schedule.sql.
+%% student_id и right_id — логические, кроме составного FK seat_reservations → bookings.
+%% bookings ||--o{ seat_reservations: target_booking_id NOT NULL; не больше одного active (частичный UNIQUE).
+erDiagram
+  teachers ||--o{ groups : "ведёт"
+  teachers ||--o{ lessons : "проводит"
+  groups ||--o{ lessons : "занятия"
+  lessons ||--o{ bookings : "записи"
+  lessons ||--o{ seat_reservations : "резервы"
+  lessons ||--o{ school_cancellations : "отмены школой"
+  bookings ||--o{ booking_cancellations : "обычные отмены"
+  bookings ||--o{ seat_reservations : "target_booking_id NOT NULL"
+  teachers {
+    uuid id PK
+    text display_name
+  }
+  groups {
+    uuid id PK
+    uuid teacher_id FK
+    text name
+  }
+  lessons {
+    uuid id PK
+    uuid group_id FK
+    uuid teacher_id FK
+    timestamptz starts_at
+    timestamptz ends_at
+    int capacity
+    int confirmed_booking_count
+    int active_reserve_count
+    text status
+  }
+  bookings {
+    uuid id PK
+    uuid lesson_id FK
+    uuid student_id "логич."
+    uuid right_id "логич."
+    uuid transfer_id "логич."
+    text seat_status
+    text hold_kind
+  }
+  seat_reservations {
+    uuid id PK
+    uuid lesson_id FK
+    uuid target_booking_id FK
+    uuid student_id FK
+    uuid right_id FK
+    uuid transfer_id "логич."
+    text status
+    timestamptz expires_at
+    boolean binding_protected
+    timestamptz created_at
+    timestamptz released_at
+  }
+  school_cancellations {
+    uuid id PK
+    uuid lesson_id FK
+    text status
+    text lesson_effect
+    text right_effect
+    text transfer_limit_effect
+  }
+  booking_cancellations {
+    uuid id PK
+    uuid booking_id FK
+    text status
+    text seat_effect
+    text right_binding_effect
+  }
+  outbox_events {
+    uuid id PK
+  }
+  processed_events {
+    uuid id PK
+  }
+  http_idempotency_keys {
+    uuid id PK
+    text actor_kind
+    text method
+    text path_template
+    text idempotency_key
+  }
