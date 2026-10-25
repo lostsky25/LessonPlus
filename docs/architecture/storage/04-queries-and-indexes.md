@@ -1,6 +1,6 @@
 # Запросы и индексы
 
-Шаг 6.4 архитектуры хранения. Таблицы и имена колонок — [03-data-model.md](03-data-model.md) и [ddl/](ddl/). Владение — [01-data-ownership.md](01-data-ownership.md). Транзакции и блокировки записи — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Списки API — [openapi/README.md](../../../packages/contracts/openapi/README.md). Карта вызовов — [interactions.md](../interactions.md).
+Шаг 6.4 архитектуры хранения. Обзор пакета — [storage-architecture.md](../storage-architecture.md). Таблицы и имена колонок — [03-data-model.md](03-data-model.md) и [ddl/](ddl/). Владение — [01-data-ownership.md](01-data-ownership.md). Транзакции и блокировки записи — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Списки API — [openapi/README.md](../../../packages/contracts/openapi/README.md). Карта вызовов — [interactions.md](../interactions.md).
 
 Пометки: **существует** — `outbox_events`, `processed_events` в рабочей базе; **проектируется** — бизнес-таблицы 6.3, пять SELECT и индексы этого документа. SQL **не** выполнять на рабочей базе. Prisma-миграций нет. Планы и время **не измерены**.
 

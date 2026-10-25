@@ -1,12 +1,12 @@
 # Владение данными
 
-Шаг 6.1 архитектуры хранения. Границы сервисов, C4, OpenAPI, контракты событий и карта взаимодействий уже зафиксированы. Этот документ не меняет пути, схемы и имена фактов.
+Шаг 6.1 архитектуры хранения. Обзор пакета — [storage-architecture.md](../storage-architecture.md). Границы сервисов, C4, OpenAPI, контракты событий и карта взаимодействий уже зафиксированы. Этот документ не меняет пути, схемы и имена фактов.
 
 Пометки: **существует** — есть в Prisma и миграциях; **проектируется** — решение для следующей реализации, таблиц и CRUD нет.
 
 Сейчас в каждой схеме только `outbox_events` и `processed_events`. Бизнес-сущности ниже все **проектируются**. Gateway, `@lessonplus/contracts` и `@lessonplus/config` сущностями не владеют.
 
-Владельцы совпадают с [domain.md](../domain.md). Чтение и согласование — с [interactions.md](../interactions.md) и OpenAPI. Экземпляр PostgreSQL, роли и проверяемая изоляция схем — в [02-storage-and-isolation.md](02-storage-and-isolation.md). Проектируемые таблицы — в [03-data-model.md](03-data-model.md). Показательные SELECT и индексы — в [04-queries-and-indexes.md](04-queries-and-indexes.md). Транзакции и согласованность — в [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Резервное копирование и восстановление — в [06-backup-and-recovery.md](06-backup-and-recovery.md). Масштабирование — в [07-scaling.md](07-scaling.md).
+Владельцы совпадают с [domain.md](../domain.md). Чтение и согласование — с [interactions.md](../interactions.md) и OpenAPI. Сводка пакета — [storage-architecture.md](../storage-architecture.md). Матрица OpenAPI/событий — [08-cross-check-matrix.md](08-cross-check-matrix.md). Экземпляр PostgreSQL, роли и проверяемая изоляция схем — в [02-storage-and-isolation.md](02-storage-and-isolation.md). Проектируемые таблицы — в [03-data-model.md](03-data-model.md). Показательные SELECT и индексы — в [04-queries-and-indexes.md](04-queries-and-indexes.md). Транзакции и согласованность — в [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Резервное копирование и восстановление — в [06-backup-and-recovery.md](06-backup-and-recovery.md). Масштабирование — в [07-scaling.md](07-scaling.md).
 
 ## Правила
 
@@ -274,9 +274,11 @@
 3. Списывает ли отсутствие право; восстанавливается ли право при смене присутствия на отсутствие.
 4. Кто и каким таймером переводит абонемент в `expired`.
 5. Как «Переносы» применяют параметры лимита и срока уведомления тарифа, не читая схему абонементов и не расширяя payload версии 1.
-6. Протокол protection / expiry / release целевого резерва после commit `rebindings`.
+6. ~~Протокол protection / expiry / release целевого hold~~ — **проектно закрыт** в [05-transactions-and-consistency.md](05-transactions-and-consistency.md) §4 (`ttl_action=wake_recovery`, durable `compensated_right_releases` для компенсации до commit, штатный confirm после commit без Released; доставка `LessonRightTransferred` **не** барьер освобождения). Реализация и проверка на стенде **не** сделаны.
 7. Обычная запись: место confirmed, привязка отклонена — освобождение места.
-8. Forget внутренних Idempotency-Key (OpenAPI v1 нет) — до него ключи не auto-delete; авто-TTL seat не −1 — 05.
+8. Forget внутренних Idempotency-Key (OpenAPI v1 нет) — до него внутренние ключи не auto-delete (05 §5.2). Авто-TTL seat не −1 — уже решение 05, не открытый протокол hold.
 9. Создание ученика, тарифа, преподавателя и группы, связь учётной записи с `studentId`.
 10. Нет факта «списание отклонено».
 11. Как потребитель, не читающий схему абонементов, подтверждает существование карточки ученика: Student GET и события ученика в контрактах нет; совпадение `studentId` у права карточку не заменяет.
+
+Ручная матрица объектов/событий шага 6.8 — [08-cross-check-matrix.md](08-cross-check-matrix.md).

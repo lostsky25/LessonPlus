@@ -9,6 +9,8 @@
 - [Каталог событий](architecture/event-catalog.md)
 - [C4: контекст и контейнеры](architecture/c4.md)
 - [Взаимодействия и последовательности](architecture/interactions.md)
+- [Архитектура хранения (обзор 6.1–6.8)](architecture/storage-architecture.md)
+- [Матрица сверки OpenAPI/событий (6.8)](architecture/storage/08-cross-check-matrix.md)
 - [Владение данными](architecture/storage/01-data-ownership.md)
 - [Хранение и изоляция](architecture/storage/02-storage-and-isolation.md)
 - [Модель данных](architecture/storage/03-data-model.md)

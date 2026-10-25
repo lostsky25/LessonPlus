@@ -7,8 +7,8 @@ flowchart LR
   nt["notifications<br/>владелец результата доставки<br/>имитация канала"]
   mq["RabbitMQ<br/>бизнес-события ещё не публикуются"]
 
-  tr -.->|"HTTP: блокировка исходного права и новая привязка"| sub
-  tr -.->|"HTTP: резерв целевого места, подтверждение новой записи, освобождение старого места"| sch
+  tr -.->|"HTTP: блокировка/снятие права и новая привязка"| sub
+  tr -.->|"HTTP: резерв/снятие целевого места, confirm, освобождение источника"| sch
   att -.->|"событие AttendanceRegistrationRequested: запрос списания"| mq
   sub -.->|"события права и абонемента"| mq
   sch -.->|"события занятия, записи и резерва места"| mq
@@ -16,6 +16,6 @@ flowchart LR
   nt -.->|"NotificationDelivered и NotificationDeliveryFailed, без отката"| mq
   mq -.->|"LessonRightConsumed, LessonRightRestored и отмена школой LessonCanceledBySchool"| att
   mq -.->|"запрос списания AttendanceRegistrationRequested, TransferRequested, отмена школой LessonCanceledBySchool, обычные BookingConfirmed и BookingCanceled"| sub
-  mq -.->|"LessonRightTransferred и TransferRequested"| sch
+  mq -.->|"LessonRightTransferred, LessonRightReleased и TransferRequested"| sch
   mq -.->|"ход переноса и истечение абонемента"| tr
   mq -.->|"поручение показать результат, канал внешний не вызывается"| nt

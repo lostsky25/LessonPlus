@@ -1,6 +1,6 @@
 # Резервное копирование и восстановление
 
-Шаг 6.6 архитектуры хранения. Факты топологии — [02-storage-and-isolation.md](02-storage-and-isolation.md), `compose.yaml`, `infra/postgres/init/001-roles.sh`. Модель — [03-data-model.md](03-data-model.md) / [ddl/](ddl/). Согласованность — [05-transactions-and-consistency.md](05-transactions-and-consistency.md), [interactions.md](../interactions.md).
+Шаг 6.6 архитектуры хранения. Обзор пакета — [storage-architecture.md](../storage-architecture.md). Факты топологии — [02-storage-and-isolation.md](02-storage-and-isolation.md), `compose.yaml`, `infra/postgres/init/001-roles.sh`. Модель — [03-data-model.md](03-data-model.md) / [ddl/](ddl/). Согласованность — [05-transactions-and-consistency.md](05-transactions-and-consistency.md), [interactions.md](../interactions.md).
 
 Клиентские утилиты: [pg_dump](https://www.postgresql.org/docs/17/app-pgdump.html), [pg_restore](https://www.postgresql.org/docs/17/app-pgrestore.html), [pg_dumpall](https://www.postgresql.org/docs/17/app-pg-dumpall.html) (PostgreSQL 17). RabbitMQ: [Docker Official Image](https://hub.docker.com/_/rabbitmq/), [Backup](https://www.rabbitmq.com/docs/backup).
 

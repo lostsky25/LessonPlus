@@ -1,6 +1,6 @@
 # Модель данных
 
-Шаг 6.3 архитектуры хранения. Владение — [01-data-ownership.md](01-data-ownership.md), изоляция — [02-storage-and-isolation.md](02-storage-and-isolation.md), запросы и индексы — [04-queries-and-indexes.md](04-queries-and-indexes.md), транзакции — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Этот документ проектирует таблицы; **не** является миграцией и **не** применяется к рабочей базе.
+Шаг 6.3 архитектуры хранения. Обзор пакета — [storage-architecture.md](../storage-architecture.md). Владение — [01-data-ownership.md](01-data-ownership.md), изоляция — [02-storage-and-isolation.md](02-storage-and-isolation.md), запросы и индексы — [04-queries-and-indexes.md](04-queries-and-indexes.md), транзакции — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Этот документ проектирует таблицы; **не** является миграцией и **не** применяется к рабочей базе.
 
 Пометки: **существует** — уже в Prisma/`20261007120000_init`; **проектируется** — только здесь, в ER и в [ddl/](ddl/).
 
@@ -320,12 +320,12 @@ CHECK: `rejected` несовместим с `outcome_unknown`/`committed`. Эт�
 | GET subscription/rights | id, status, bookingId, studentId | `lesson_rights.*` | списки API сортируют по `id`, в модели есть `created_at` |
 | `POST .../reservations`, `LessonRightReserved` | reservationId, transferId, source booking | `right_reservations` + статус права `reserved` | — |
 | `POST .../releases`, `LessonRightReleased` | возврат bound к source | `close_reason = compensated`, `released_at` | повтор ключа компенсации → 200; после `converted` → `409 binding_fixed` |
-| `POST .../rebindings`, `LessonRightTransferred` | targetBookingId, commit | журнал `rebound`; право `bound`; исходящий outbox | freeze TTL у schedule этим событием не закрыт |
+| `POST .../rebindings`, `LessonRightTransferred` | targetBookingId, commit | журнал `rebound`; право `bound`; исходящий outbox | **Проектный** протокол hold закрыт в [05](05-transactions-and-consistency.md) §4; доставка Transferred **сама** не барьер TTL/release. Реализация/проверка не сделаны |
 | `LessonRightConsumed` | rightId, bookingId, lessonId, registrationId | `right_operations` consumed (все четыре поля); право `consumed`, `booking_id` NULL | — |
 | `LessonRightRestored` | consumedRegistrationId, lessonId, attendanceCorrectionId, bookingId | restore-строка + FK на consume | когда звать при absence — не задано |
 | `POST /v1/lessons`, `LessonScheduled` | урок, capacity, status | `lessons.*` | в payload нет адресатов уведомления |
 | GET lesson `freeSeatCount` | capacity − занято | `capacity − confirmed − active_reserve` | ordinary pending в счётчике vs формула OpenAPI без pending |
-| `POST .../seat-reservations`, `TransferSeatReserved` | в контракте v1: `seatReservationId` / `id`, `targetBookingId`, `status=active` (expiresAt **нет** ни в payload, ни в OpenAPI `SeatReservation`) | те же поля + проектная колонка `expires_at` (только внутренняя) | TTL до commit / protection после commit открыты; `expires_at` в контракт v1 не входит |
+| `POST .../seat-reservations`, `TransferSeatReserved` | в контракте v1: `seatReservationId` / `id`, `targetBookingId`, `status=active` (expiresAt **нет** ни в payload, ни в OpenAPI `SeatReservation`) | те же поля + проектные `expires_at`, `ttl_action=wake_recovery` (внутренние) | **Проект:** авто-TTL не −1; компенсация seat — после durable Released; после commit — штатный confirm (05 §4). `expires_at` в контракт v1 не входит. Реализация не сделана |
 | confirm / `BookingConfirmed` | seat confirmed, transferId optional | `seat_status`, счётчики, `hold_kind none` | ordinary confirmed без привязки — протокол открыт |
 | `BookingCanceled` | cause ordinary vs transfer_source_release | `booking_cancellations` / cancel source | `rightBindingEffect` без нового события — хранится pending |
 | `LessonCanceledBySchool` | lessonId, schoolCancellationId, без studentId | `school_cancellations`; урок `canceled_by_school` | список адресатов Notification не в payload; GET владельца не зафиксирован как канал notifications |
@@ -337,15 +337,15 @@ CHECK: `rejected` несовместим с `outcome_unknown`/`committed`. Эт�
 | `TransferCompleted` / `TransferRejected` | status, knowledge | CHECK knowledge; outbox | лимит тарифа координатор не читает SQL и не имеет поля v1 |
 | `Notification` / Delivered / Failed | studentId, channel=imitation, source event | `notifications` + attempts | факты без studentId: маршрутизация не покрыта контрактами v1 |
 
-Модель **не** добавляет 21-е событие и не закрывает списание отсутствия. Протокол целевого hold — [05](05-transactions-and-consistency.md) §4 (согласовано с ddl/`ttl_action`, recipients Released).
+Модель **не** добавляет 21-е событие и не закрывает списание отсутствия. **Проектный** протокол целевого hold закрыт в [05](05-transactions-and-consistency.md) §4 (согласовано с ddl/`ttl_action`, recipients Released); реализация и drill **не** сделаны. Ручная сверка объектов/событий — [08-cross-check-matrix.md](08-cross-check-matrix.md).
 
 ## Что существует, что проектируется, что открыто
 
 **Существует:** `outbox_events`, `processed_events` в пяти схемах (структура init).
 
-**Проектируется:** все таблицы `ddl/*.sql`, ER, состояния резервов, `close_reason`, журнал consume/restore, `transfer_outbound_steps`/`_attempts` с actor, `binding_knowledge`, поручения `(event, student, channel)`, снимки применённой корректировки, составные FK локальной сверки, счётчики занятия и `hold_kind`; плюс 6.5: `ttl_action`, `compensated_right_releases`, `claim_*`+CHECK, `next_attempt_no`, `canceled_lessons` в subscriptions.
+**Проектируется:** все таблицы `ddl/*.sql`, ER, состояния резервов, `close_reason`, журнал consume/restore, `transfer_outbound_steps`/`_attempts` с actor, `binding_knowledge`, поручения `(event, student, channel)`, снимки применённой корректировки, составные FK локальной сверки, счётчики занятия и `hold_kind`; плюс 6.5: `ttl_action`, `compensated_right_releases`, `claim_*`+CHECK, `next_attempt_no`, `canceled_lessons` в subscriptions. Сюда же входит **принятое** решение 05 по hold (не «открытый протокол»).
 
-**Открыто (не закрыто моделью 6.3 / частично закрыто 6.5):**
+**Открыто (не закрыто моделью / контрактом v1; hold-протокол сюда не входит):**
 
 - таймер `expired` абонемента;
 - канал forget внутренних Idempotency-Key (до него внутренние ключи **не** auto-delete, см. 05 §5.2);

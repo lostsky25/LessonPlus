@@ -1,6 +1,6 @@
 # Масштабирование хранения
 
-Шаг 6.7 архитектуры хранения. Топология — [02-storage-and-isolation.md](02-storage-and-isolation.md). Владение — [01-data-ownership.md](01-data-ownership.md). Модель — [03-data-model.md](03-data-model.md). Пять показательных SELECT — [04-queries-and-indexes.md](04-queries-and-indexes.md). Конкуренция и outbox — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Резервирование — [06-backup-and-recovery.md](06-backup-and-recovery.md).
+Шаг 6.7 архитектуры хранения. Обзор пакета — [storage-architecture.md](../storage-architecture.md). Топология — [02-storage-and-isolation.md](02-storage-and-isolation.md). Владение — [01-data-ownership.md](01-data-ownership.md). Модель — [03-data-model.md](03-data-model.md). Пять показательных SELECT — [04-queries-and-indexes.md](04-queries-and-indexes.md). Конкуренция и outbox — [05-transactions-and-consistency.md](05-transactions-and-consistency.md). Резервирование — [06-backup-and-recovery.md](06-backup-and-recovery.md).
 
 Ссылки PostgreSQL 17: [Partitioning limitations](https://www.postgresql.org/docs/17/ddl-partitioning.html), [Warm Standby](https://www.postgresql.org/docs/17/warm-standby.html), [Hot Standby](https://www.postgresql.org/docs/17/hot-standby.html).
 
@@ -148,5 +148,5 @@ TTL пяти retry-ступеней брокера **не** верхний го�
 
 ## 8. Навигация
 
-- [06-backup-and-recovery.md](06-backup-and-recovery.md), [05-transactions-and-consistency.md](05-transactions-and-consistency.md), [04-queries-and-indexes.md](04-queries-and-indexes.md)
-- [02-storage-and-isolation.md](02-storage-and-isolation.md), [architecture.md](../../architecture.md)
+- [storage-architecture.md](../storage-architecture.md), [06-backup-and-recovery.md](06-backup-and-recovery.md), [05-transactions-and-consistency.md](05-transactions-and-consistency.md)
+- [04-queries-and-indexes.md](04-queries-and-indexes.md), [02-storage-and-isolation.md](02-storage-and-isolation.md), [architecture.md](../../architecture.md)
