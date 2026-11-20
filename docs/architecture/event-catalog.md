@@ -52,7 +52,7 @@ HTTP-команды OpenAPI в этот список не входят. Соот
 | ------- | ------------------------ | ----- | ------ |
 | `TransferRequested` | Расписание, Абонементы, Уведомления | Заявка принята координатором и ещё не выполнена | [TransferRequested.json](../../packages/contracts/events/examples/TransferRequested.json) |
 | `TransferCompleted` | Уведомления | Заявка завершена после новой привязки, подтверждения новой записи и освобождения исходного места | [TransferCompleted.json](../../packages/contracts/events/examples/TransferCompleted.json) |
-| `TransferRejected` | Уведомления | Заявка отклонена до фиксации новой привязки. Новая привязка ещё не создана, исходное право остаётся неиспользованным | [TransferRejected.json](../../packages/contracts/events/examples/TransferRejected.json) |
+| `TransferRejected` | Уведомления | Заявка отклонена до фиксации новой привязки. При `rejectionReason=right_consumed` исходное право уже списано | [TransferRejected.json](../../packages/contracts/events/examples/TransferRejected.json) |
 
 ## Уведомления публикуют
 
@@ -79,7 +79,7 @@ HTTP-команды OpenAPI в этот список не входят. Соот
 2. Перенос, только как проект и без алгоритма в коде. Счастливый путь: `LessonRightReserved` → `TransferSeatReserved` → commit (`LessonRightTransferred`) → confirm (`BookingConfirmed`) → source-release (`BookingCanceled` `transfer_source_release`) → `TransferCompleted`. **Компенсация до commit** (порядок 05 §4): сначала release права (`LessonRightReleased`) → durable проекция у schedule → затем release места; итог `TransferRejected`. **После commit:** компенсация запрещена; доводят confirm target и source-release. Защита hold — [storage/05-transactions-and-consistency.md](storage/05-transactions-and-consistency.md) §4; доставка Transferred **сама** не барьер. Карта — [interactions.md](interactions.md).
 3. Отмена школой: источник — `LessonCanceledBySchool`. Цель — сохранить право и не тратить user limit; пределы async/consume и отсутствие auto-restore/`completed` — см. строку каталога выше и 05 §6.
 
-Повтор события с тем же `event_id` проектируется как уже обработанный через `processed_events`. Сейчас потребитель, который это делает, не запущен.
+По проекту потребитель сохраняет `processed_events` и эффект в одной транзакции. При повторной доставке он пропускает эффект, если запись с этим `event_id` сохранилась. Восстановление БД из снимка требует сверки с брокером перед возобновлением обработки.
 
 ## Проверка списка
 

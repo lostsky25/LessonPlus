@@ -2,7 +2,9 @@ node_modules
 **/dist
 **/src/generated
 .git
-.env
+**/.env
+**/.env.*
+!**/.env.example
 coverage
 *.log
 **/*.tsbuildinfo

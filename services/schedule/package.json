@@ -7,7 +7,7 @@
     "dev": "node ../../scripts/dev-app.mjs",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/main.js",
+    "start": "node ../../scripts/dev-app.mjs --start",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy"
   },
@@ -21,7 +21,6 @@
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "amqplib": "2.2.0",
-    "dotenv": "18.0.6",
     "pg": "8.23.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"

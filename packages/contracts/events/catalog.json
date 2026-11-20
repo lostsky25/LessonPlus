@@ -128,7 +128,7 @@
       "event_type": "TransferRejected",
       "publisher": "transfers",
       "recipients": ["notifications"],
-      "fact": "Заявка отклонена до новой привязки. Исходное право остаётся неиспользованным.",
+      "fact": "Заявка отклонена до новой привязки. При rejectionReason=right_consumed исходное право уже списано.",
       "expected_changes": "Уведомления сохраняют поручение. Отката абонемента событие не требует."
     },
     {

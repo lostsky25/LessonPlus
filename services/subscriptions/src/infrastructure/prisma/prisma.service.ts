@@ -23,7 +23,7 @@ export class PrismaService implements DatabaseProbe {
 
   async ping(): Promise<void> {
     try {
-      await this.client.$queryRaw`SELECT 1`;
+      await this.client.outboxEvent.findFirst({ select: { id: true } });
     } catch (error) {
       this.logger.error(`PostgreSQL недоступен: ${sanitizeError(error)}`);
       throw error;

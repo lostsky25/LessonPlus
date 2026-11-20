@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./local-env": {
+      "types": "./dist/local-env.d.ts",
+      "default": "./src/local-env.js"
     }
   },
   "scripts": {

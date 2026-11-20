@@ -2,11 +2,7 @@ import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import {
-  type BusinessServiceOptions,
-  loadBusinessServiceConfig,
-  loadLocalEnv,
-} from '@lessonplus/config';
+import { type BusinessServiceOptions, loadBusinessServiceConfig } from '@lessonplus/config';
 import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './presentation/http-exception.filter.js';
 
@@ -24,7 +20,6 @@ function readConfig(options: ServiceBootstrapOptions) {
 }
 
 export async function bootstrap(options: ServiceBootstrapOptions): Promise<void> {
-  loadLocalEnv();
   const config = readConfig(options);
 
   const app = await NestFactory.create(AppModule.register(config));

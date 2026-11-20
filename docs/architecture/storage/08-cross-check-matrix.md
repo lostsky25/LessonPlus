@@ -32,7 +32,7 @@ Envelope факта: `event_id`, `event_type`, `schema_version=1`, `occurred_at`
 | `ActivateSubscriptionRequest` | subscriptions | body: `studentId`, `tariffId` → **local FK** на `students`/`tariffs` той же схемы | нет Student/Tariff OpenAPI |
 | `Subscription` | subscriptions | response: `id`, `studentId`, `tariffId`; `balance` **derived** | `subscriptions` |
 | `SubscriptionList` | subscriptions | `items`, `nextCursor` | DTO |
-| `LessonRight` / `LessonRightList` | subscriptions | response: `id`, `subscriptionId`, `studentId`; `bookingId`/`transferId` optional | `lesson_rights` |
+| `LessonRight` / `LessonRightList` | subscriptions | response: `id`, `subscriptionId`, `studentId`. Поля `bookingId` и `transferId` обязательны и допускают `null` | `lesson_rights` |
 | `ReserveRightRequest` | subscriptions | body: `transferId`, `sourceBookingId`; path: `rightId` | → `right_reservations` |
 | `RightReservation` | subscriptions | response: `id`, `rightId`, `transferId`, `sourceBookingId`, `status` | `right_reservations` |
 | `ReleaseRightReservationRequest` | subscriptions | body: `transferId`; path: `rightId`, `reservationId` | release TX |
@@ -44,14 +44,14 @@ Envelope факта: `event_id`, `event_type`, `schema_version=1`, `occurred_at`
 | `BookingList` / `BookingCancellation` | schedule | cancellation: `id`, `bookingId`; `rightBindingEffect` | `booking_cancellations`; сигнал **открыт** |
 | `ReserveSeatRequest` | schedule | body: `transferId`, `studentId`, `rightId`; path: `lessonId` | |
 | `SeatReservation` | schedule | response: `id`, `lessonId`, `transferId`, `studentId`, `rightId`, `targetBookingId`, `status` | `seat_reservations`; `expires_at` в OpenAPI **нет** |
-| `ReleaseSeatReservationRequest` | schedule | body: `transferId`; path: `reservationId` (места) | |
+| `ReleaseSeatReservationRequest` | schedule | body: `transferId`; path: `reservationId` (места) | Снятие активного резерва при компенсации требует подходящей записи в `compensated_right_releases` (05 §4) |
 | `ConfirmTransferBookingRequest` | schedule | **body:** `seatReservationId`, `targetBookingId`; **path:** `transferId` | confirm TX |
 | `TransferReleaseBookingRequest` | schedule | **body:** `transferId`; **path:** `bookingId` (исходная запись) | source-release TX |
 | `RegisterAttendanceRequest` | attendance | body: `bookingId`, `studentId`, `lessonId`, `rightId`, `mark` | |
 | `AttendanceRegistration` | attendance | response: `id` (=registrationId), те же ссылки | `attendance_registrations` |
 | `Attendance` | attendance | response: `id` (=attendanceId), `registrationId`; UNIQUE `bookingId` | `attendances` |
 | `CorrectAttendanceRequest` / `AttendanceCorrection` | attendance | response/op id = `attendanceCorrectionId`; корреляция consume — `consumedRegistrationId` в модели/событии restore | `attendance_corrections`; HTTP restore у subscriptions **нет** |
-| `RequestTransferRequest` / `Transfer` / `TransferList` | transfers | response: `id` (=transferId), `studentId`, `rightId`, `sourceBookingId`, `targetLessonId`, `targetBookingId?` | `transfers` |
+| `RequestTransferRequest` / `Transfer` / `TransferList` | transfers | response: `id` (=transferId), `studentId`, `rightId`, `sourceBookingId`, `targetLessonId`. Поле `targetBookingId` обязательно и допускает `null` | `transfers` |
 | `Notification` / `NotificationList` | notifications | response: `id`, `studentId`, `subjectType`+`subjectId` (**logical**, см. §1.3) | `notifications` |
 | `AcceptedOperation` | DTO 202 | `resourceId` = id ресурса владельца; `status=accepted` ≠ успех сценария | нет таблицы |
 
@@ -105,7 +105,7 @@ Envelope факта: `event_id`, `event_type`, `schema_version=1`, `occurred_at`
 | `SubscriptionActivated` | subscriptions | notifications | `subscriptionId`, `studentId`, `tariffId`, `status`(=`active`), `activatedAt`, `expiresAt` | subscription + N rights + outbox | Student/Tariff HTTP нет |
 | `SubscriptionExpired` | subscriptions | notifications, transfers | `subscriptionId`, `studentId`, `tariffId`, `status`(=`expired`), `expiredAt` | status expired | таймер — **открыто** |
 | `LessonRightReserved` | subscriptions | transfers | `rightId`, `subscriptionId`, `studentId`, `transferId`, `reservationId`, `sourceBookingId`, `status`(=`reserved`) | right→reserved; reservation active | 05 |
-| `LessonRightReleased` | subscriptions | transfers, schedule | `rightId`, `subscriptionId`, `studentId`, `transferId`, `reservationId`, `sourceBookingId`, `bookingId`, `status`(=`bound`), `reservationStatus`(=`released`) | compensated release | schedule projection 05 §4 |
+| `LessonRightReleased` | subscriptions | transfers, schedule | `rightId`, `subscriptionId`, `studentId`, `transferId`, `reservationId`, `sourceBookingId`, `bookingId`, `status`(=`bound`), `reservationStatus`(=`released`) | резерв права снят | `schedule.yaml` указывает получаемый факт. Проекция у schedule и `processed_events` записываются в одной транзакции до снятия места (05 §4) |
 | `LessonRightConsumed` | subscriptions | attendance, notifications | `rightId`, `subscriptionId`, `studentId`, `bookingId`, `lessonId`, `registrationId`, `status`(=`consumed`), `rightEffect`(=`consumed`) | journal consume; right consumed | UNIQUE `(right_id,booking_id)` |
 | `LessonRightRestored` | subscriptions | attendance, notifications | `rightId`, `subscriptionId`, `studentId`, `bookingId`, `lessonId`, `consumedRegistrationId`, `attendanceCorrectionId`, `status`(=`bound`) — **нет** `registrationId`, **нет** `rightEffect` | journal restore | HTTP restore нет; absence **открыто** |
 | `LessonRightTransferred` | subscriptions | transfers, schedule | `rightId`, `subscriptionId`, `studentId`, `transferId`, `reservationId`, `sourceBookingId`, `targetBookingId`, `status`(=`bound`) | rebind commit | Transferred ≠ барьер hold |

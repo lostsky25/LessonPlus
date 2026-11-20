@@ -155,9 +155,6 @@ importers:
       amqplib:
         specifier: 2.2.0
         version: 2.2.0
-      dotenv:
-        specifier: 18.0.6
-        version: 18.0.6
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -210,9 +207,6 @@ importers:
       amqplib:
         specifier: 2.2.0
         version: 2.2.0
-      dotenv:
-        specifier: 18.0.6
-        version: 18.0.6
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -265,9 +259,6 @@ importers:
       amqplib:
         specifier: 2.2.0
         version: 2.2.0
-      dotenv:
-        specifier: 18.0.6
-        version: 18.0.6
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -320,9 +311,6 @@ importers:
       amqplib:
         specifier: 2.2.0
         version: 2.2.0
-      dotenv:
-        specifier: 18.0.6
-        version: 18.0.6
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -375,9 +363,6 @@ importers:
       amqplib:
         specifier: 2.2.0
         version: 2.2.0
-      dotenv:
-        specifier: 18.0.6
-        version: 18.0.6
       pg:
         specifier: 8.23.1
         version: 8.23.1

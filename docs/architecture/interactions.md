@@ -13,7 +13,7 @@ Gateway опрашивает health сервисов. Сервисы прове�
 | `apps/web` | `api-gateway` | Стартовый экран | синхронный запрос | `GET /api/system/status` → `SystemStatus` | нет отдельного клиентского таймаута в коде UI | нет | GET без ключа | экран показывает недоступность |
 | `api-gateway` | каждый бизнес-сервис | Сбор live/ready | синхронный запрос | `GET /health/live`, `GET /health/ready` | **5 с**, `PROBE_TIMEOUT_MS` в `service-status.client.ts` | нет, параллельный опрос | нет | `down`, gateway сам остаётся доступен |
 | бизнес-сервис | RabbitMQ | Readiness брокера | синхронная проверка | `RABBITMQ_URL`, не публикация | **3 с**, `CONNECT_TIMEOUT_MS` | нет | нет | `GET /health/ready` → 503 телом readiness, не схемой `Error` |
-| бизнес-сервис | PostgreSQL своей схемы | Readiness базы | синхронная проверка | `DATABASE_URL` этой роли | соединение **3 с**, `connectionTimeoutMillis: 3000` в `PrismaPg` каждого сервиса; явного дедлайна у `SELECT 1` нет | нет | нет | тот же 503 readiness |
+| бизнес-сервис | PostgreSQL своей схемы | Readiness базы | синхронная проверка | `DATABASE_URL` этой роли | соединение **3 с**, `connectionTimeoutMillis: 3000` в `PrismaPg` каждого сервиса. Запрос читает до одного `id` из локальной `outbox_events` без отдельного дедлайна | нет | нет | тот же 503 readiness |
 
 `/internal/v1` gateway не проксирует. HTTP-клиента `transfers` и клиента посещений к абонементам в репозитории нет.
 
@@ -76,7 +76,7 @@ Gateway опрашивает health сервисов. Сервисы прове�
 
 | Источник | Получатель | Назначение | Тип | Контракт | Таймаут | Повторы | Идемпотентность | Отказ |
 | -------- | ---------- | ---------- | --- | -------- | ------- | ------- | --------------- | ----- |
-| transfers | subscriptions | Блокировка исходного неиспользованного права | синхронный запрос | `POST /internal/v1/rights/{rightId}/reservations`, `ReserveRightRequest` → `201 RightReservation`; факт `LessonRightReserved` (`status=reserved`) | HTTP 5 с | тот же ключ шага, пока исход неизвестен | ключ шага, не публичный | подтверждённый `409 right_consumed` / `right_not_available`: компенсация. Таймаут: повтор ключа, не «права нет» |
+| transfers | subscriptions | Блокировка исходного неиспользованного права | синхронный запрос | `POST /internal/v1/rights/{rightId}/reservations`, `ReserveRightRequest` → `201 RightReservation`; факт `LessonRightReserved` (`status=reserved`) | HTTP 5 с | тот же ключ шага, пока исход неизвестен | ключ шага, не публичный | При подтверждённом `409 right_consumed` / `right_not_available` заявка отклоняется. При таймауте повторяют тот же запрос |
 | transfers | schedule | Резерв целевого места | синхронный запрос | `POST /internal/v1/lessons/{lessonId}/seat-reservations` → `201 SeatReservation` с `targetBookingId`; факт `TransferSeatReserved` | HTTP 5 с | тот же ключ шага | ключ шага | подтверждённый `409 no_free_seat`: reservationId нет. Таймаут: резерв мог появиться, см. восстановление |
 | transfers | subscriptions | Фиксация новой привязки | синхронный запрос | `POST /internal/v1/rights/{rightId}/rebindings`, `RebindRightRequest` → `LessonRight`; факт `LessonRightTransferred` | HTTP 5 с | тот же ключ, пока commit не выяснен | ключ шага | граница — **commit у subscriptions**, не HTTP 200 и не доставка события. Потерянный ответ: только повтор ключа, без параллельного release |
 | transfers | schedule | Подтверждение новой записи | синхронный запрос | `POST /internal/v1/transfers/{transferId}/booking-confirmations` → `Booking`; факт `BookingConfirmed` с `transferId` | HTTP 5 с | после commit только повтор шага | ключ шага | привязку не создаёт |
@@ -112,7 +112,7 @@ HTTP списания посещений нет: это событие `Attendan
 | attendance | notifications | Окончательное отсутствие | событие | `AbsenceRecorded` | ступени | `event_id`; `rightEffect=unspecified` | не утверждает списание |
 | transfers | schedule, subscriptions, notifications | Заявка принята | событие | `TransferRequested` | ступени | `event_id`; HTTP шагов не заменяет | получатели не резервируют сами по событию |
 | transfers | notifications | Перенос завершён | событие | `TransferCompleted` | ступени | `event_id` | только после привязки, confirm и освобождения источника |
-| transfers | notifications | Отказ до commit привязки | событие | `TransferRejected` | ступени | `event_id` | исходное право неиспользованно |
+| transfers | notifications | Отказ до commit привязки | событие | `TransferRejected` | ступени | `event_id` | причину отказа указывает `rejectionReason` |
 | notifications | нет | Итог имитации | событие | `NotificationDelivered` / `NotificationDeliveryFailed` | ступени у аудита не нужны бизнесу | повтор не создаёт вторую доставку на тот же `event_id` поручения | **нет** отката абонемента, записи, посещения, переноса |
 
 Неизвестный тип, невалидный JSON, `schema_version` ≠ 1 — в DLQ сервиса, без `processed_events`.
@@ -178,14 +178,15 @@ sequenceDiagram
   Att->>Mq: AttendanceRegistrationRequested
   Mq->>Sub: списать rightId и bookingId
   Sub->>Mq: LessonRightConsumed
-  Mq->>Att: AttendanceRecorded
+  Mq->>Att: LessonRightConsumed
+  Att->>Mq: AttendanceRecorded
 ```
 
 Для `mark=absence` окончательный факт — `AbsenceRecorded` с `rightEffect=unspecified`. Списывает ли отсутствие право, требования не задают.
 
 ### Повтор запроса или события
 
-Повтор HTTP с тем же ключом и тем же отпечатком в той же области возвращает сохранённый ответ. Таймаут не создаёт новый ключ. Повтор брокера с тем же `event_id` не выполняет сценарий. Новый HTTP посещения с другим ключом даёт другой `registrationId`, но не второе списание.
+Повтор HTTP с тем же ключом и тем же отпечатком в той же области возвращает сохранённый ответ. При таймауте ключ сохраняют. При повторной доставке обработчик пропускает эффект, если находит `event_id` в `processed_events`, записанный в одной транзакции с эффектом. После восстановления из снимка требуется сверка с брокером. Новый HTTP посещения с другим ключом даёт другой `registrationId`, но не второе списание.
 
 Исходник: [diagrams/seq-retry.mmd](diagrams/seq-retry.mmd).
 
@@ -308,7 +309,7 @@ sequenceDiagram
   Sub-->>Sub: операция завершена, outbox записан
   Sub->>Mq: confirm публикации
   Nt--x Nt: недоступны
-  Nt->>Mq: позднее тот же event_id
+  Mq->>Nt: позднее доставка того же event_id
   Nt->>Mq: NotificationDeliveryFailed
   Note over Sub: отката нет
 ```
@@ -317,7 +318,7 @@ sequenceDiagram
 
 Граница — **commit** новой привязки в базе «Абонементов», а не получение HTTP 200 и не доставка `LessonRightTransferred`.
 
-До commit допустима компенсация: снять резерв места (когда `reservationId` известен), снять блокировку права, опубликовать `TransferRejected`. Пока право в резерве, факт `LessonRightReserved` несёт `status=reserved`; исходная запись сохраняется в `sourceBookingId`, это не `LessonRight.status=bound`. После `LessonRightReleased` право снова `bound` к `sourceBookingId`.
+Если координатор установил, что новой привязки ещё нет, он сначала снимает созданный резерв права. «Абонементы» возвращают право в `bound` к `sourceBookingId` и записывают `LessonRightReleased` в outbox. Если создан и резерв места, «Расписание» разрешает его снять только после записи этого факта в `compensated_right_releases`. После освобождения созданных резервов «Переносы» публикуют `TransferRejected`.
 
 После commit компенсация запрещена. Заявку доводят повторами оставшихся HTTP-шагов. Освобождение источника — не обычная отмена.
 
@@ -359,7 +360,7 @@ sequenceDiagram
 Окончательное решение по праву принимает **«Абонементы»**. Сериализация — на `rightId` у владельца.
 
 - Если право `reserved` под перенос, списание присутствия конфликтует. Отдельного факта отказа в каталоге нет.
-- Если право `consumed`, подтверждённый резерв переноса — `409 right_consumed`, дальше компенсация и `TransferRejected`.
+- Если списание победило в гонке, попытка зарезервировать право получает `409 right_consumed`. Это первый шаг переноса. Координатор отклоняет заявку без снятия резервов.
 - «Посещения» и «Переносы» чужие таблицы не читают.
 
 Состояние процесса переноса хранится у «Переносов». Состояние списания — у «Абонементов» (право) и у «Посещений» (регистрация/отметка).
@@ -391,7 +392,7 @@ sequenceDiagram
 - Ключ идемпотентности HTTP: область (сторона, метод, шаблон пути) отдельно от отпечатка; сохранённый ответ, в том числе после таймаута клиента.
 - Заявка переноса: шаг, `reservationId` права и места, `targetBookingId`, признак **commit привязки** (не «получили 200»), запрет `rejected` после commit. Не запускать компенсацию, пока commit неизвестен.
 - Право: статусы `available|reserved|bound|consumed`; при `reserved` исходная запись в `sourceBookingId`; блокировка против одновременных резерва и списания; уникальность списания `(rightId, bookingId)`.
-- Место: вместимость = confirmed + active reserves; strict `< capacity` только на новый +1; confirm существующего hold при полной сумме проходит. Transfer-hold: авто-TTL не −1; seat release только после локального `LessonRightReleased` или штатный confirm — [storage/05](storage/05-transactions-and-consistency.md).
+- Число занятых мест ограничено вместимостью: `confirmed_booking_count + active_reserve_count ≤ capacity`. Новый резерв требует свободного места. Подтверждение существующего резерва уменьшает число резервов на один и увеличивает число подтверждённых записей на один даже при полной вместимости. Истечение TTL сохраняет удержание места. Компенсация требует локальной проекции `LessonRightReleased`. [Протокол удержания места](storage/05-transactions-and-consistency.md).
 - Посещение: `registrationId` отдельно от `attendanceId`; одна окончательная отметка на `bookingId`.
 - Outbox: колонки конверта плюс `published_at`; `processed_events.id = event_id`.
 - Уведомление: без каскада откатов.

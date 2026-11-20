@@ -7,7 +7,7 @@
     "dev": "node ../../scripts/dev-app.mjs",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/main.js"
+    "start": "node ../../scripts/dev-app.mjs --start"
   },
   "dependencies": {
     "@lessonplus/config": "workspace:*",

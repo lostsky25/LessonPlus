@@ -1,5 +1,3 @@
-import { config as loadDotenv } from 'dotenv';
-import { resolve } from 'node:path';
 import { z } from 'zod';
 
 const postgresUrl = z
@@ -53,22 +51,13 @@ export interface BusinessServiceOptions {
   databaseUrlVariable: string;
 }
 
-const gatewayTargets = [
+export const gatewayTargets = [
   ['subscriptions', 'SUBSCRIPTIONS_URL'],
   ['schedule', 'SCHEDULE_URL'],
   ['attendance', 'ATTENDANCE_URL'],
   ['transfers', 'TRANSFERS_URL'],
   ['notifications', 'NOTIFICATIONS_URL'],
 ] as const;
-
-/**
- * Подхватывает .env сервиса и корневой .env.
- * Уже заданные переменные не перезаписываются, поэтому Docker-адреса остаются в силе.
- */
-export function loadLocalEnv(cwd = process.cwd()): void {
-  loadDotenv({ path: resolve(cwd, '.env') });
-  loadDotenv({ path: resolve(cwd, '../../.env') });
-}
 
 export function loadBusinessServiceConfig(
   env: NodeJS.ProcessEnv,

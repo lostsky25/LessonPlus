@@ -116,6 +116,8 @@ pnpm test
 - `SUBSCRIPTIONS_URL` … `NOTIFICATIONS_URL` — адреса сервисов для gateway;
 - `API_PROXY_TARGET` — куда Vite на хосте проксирует `/api` (`http://localhost:3000`).
 
+Для локальных Nest-приложений команды `dev` и `start` выбирают настройки до запуска дочернего процесса. Приоритет у переменных оболочки, затем у `.env` приложения и корневого `.env`. Gateway получает адреса HTTP-сервисов. При прямом запуске `node dist/main.js` нужные переменные передаёт вызывающая сторона.
+
 Docker Compose не использует эти хостовые URL для процессов в контейнерах. Он задаёт `DATABASE_URL` с хостом `postgres`, `RABBITMQ_URL` с хостом `rabbitmq`, URL сервисов по именам контейнеров и `API_PROXY_TARGET=http://api-gateway:3000`.
 
 `POSTGRES_USER` нужен только контейнеру PostgreSQL для создания ролей и схем. Работающие сервисы подключаются ролями `subscriptions_user`, `schedule_user`, `attendance_user`, `transfers_user` и `notifications_user`.

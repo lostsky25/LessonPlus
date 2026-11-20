@@ -1,11 +1,10 @@
-import { config as loadDotenv } from 'dotenv';
-import { dirname, resolve } from 'node:path';
+import { loadLocalEnv } from '@lessonplus/config/local-env';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, env } from 'prisma/config';
 
 const serviceRoot = dirname(fileURLToPath(import.meta.url));
-loadDotenv({ path: resolve(serviceRoot, '.env') });
-loadDotenv({ path: resolve(serviceRoot, '../../.env') });
+loadLocalEnv(['DATABASE_URL', 'TRANSFERS_DATABASE_URL'], serviceRoot);
 
 const databaseUrl = process.env.DATABASE_URL ?? process.env.TRANSFERS_DATABASE_URL;
 if (!databaseUrl) {
