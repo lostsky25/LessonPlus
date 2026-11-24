@@ -30,13 +30,57 @@ HTTP-команды OpenAPI в этот список не входят. Соот
 
 ## Расписание публикует
 
-| Событие | Проектируемые получатели | Смысл | Пример |
-| ------- | ------------------------ | ----- | ------ |
-| `LessonScheduled` | Уведомления | Занятие поставлено в расписание | [LessonScheduled.json](../../packages/contracts/events/examples/LessonScheduled.json) |
-| `LessonCanceledBySchool` | Абонементы, Переносы, Посещения, Уведомления | Занятие отменено школой. **Цель:** право не списывать и не уничтожать; пользовательский лимит переносов не тратить. Пока факт не обработан в subscriptions (`canceled_lessons`), consume ещё может пройти; после уже прошедшего consume **нет** auto-restore и **нет** сигнала для `school_cancellations.completed` / `rightEffect=preserved` (открыто). HTTP-операция отмены может ещё быть `in_progress` | [LessonCanceledBySchool.json](../../packages/contracts/events/examples/LessonCanceledBySchool.json) |
-| `BookingConfirmed` | Переносы; вне переноса также Абонементы и Уведомления | Запись подтверждена. В переносе это шаг после `LessonRightTransferred`: привязку событие не создаёт, координатор — «Переносы». Вне переноса `transferId` равен `null`, «Абонементы» связывают право с этой записью | [BookingConfirmed.json](../../packages/contracts/events/examples/BookingConfirmed.json) |
-| `BookingCanceled` | Вне переноса — Абонементы и Уведомления. Освобождение исходного места переноса — Переносы | Обычная отмена (`cause=ordinary`) требует `bookingCancellationId` и снимает привязку, только если она ещё указывает на эту запись. `cause=transfer_source_release` требует `transferId`, новую привязку не снимает | [обычная](../../packages/contracts/events/examples/BookingCanceled.json), [освобождение исходного места](../../packages/contracts/events/examples/BookingCanceled.transfer-source-release.json) |
-| `TransferSeatReserved` | Переносы | Место под перенос удержано | [TransferSeatReserved.json](../../packages/contracts/events/examples/TransferSeatReserved.json) |
+Издатель всех пяти типов — `schedule`. Факт записывается в outbox в транзакции изменения занятия, записи или резерва. Карточки используют общий конверт v1. Все перечисленные поля `payload` обязательны, даже если значение может быть `null`. Идентификаторы имеют формат UUID, поля даты и времени — ISO 8601.
+
+### `LessonScheduled`
+
+- **Факт и момент записи.** `POST /v1/lessons` создал занятие в статусе `scheduled`.
+- **Payload.** `lessonId`, `groupId`, `teacherId`, `startsAt`, `endsAt`, `capacity` (целое ≥ 1), `status=scheduled`.
+- **Подписчики и последствия.** `notifications` сохраняет поручение на имитацию уведомления о занятии и дедуплицирует его по исходному `event_id`.
+- **Порядок.** Создание занятия предшествует записи и отмене этого занятия. Уведомления могут принять самостоятельный факт создания из payload, порядок доставки связанных фактов брокером не гарантирован.
+- **Ошибки.** Подтверждённый отказ команды (`400`/`409`) не порождает факт. При `503` или таймауте вызывающая сторона повторяет HTTP с тем же `Idempotency-Key`. Временный сбой сохранения поручения повторяется по правилам очереди.
+- **Пример.** [LessonScheduled.json](../../packages/contracts/events/examples/LessonScheduled.json)
+
+### `LessonCanceledBySchool`
+
+- **Факт и момент записи.** Команда `POST /v1/lessons/{lessonId}/school-cancellations` зафиксировала отмену занятия школой. Операция может оставаться `in_progress`, пока эффекты для права и лимита не подтверждены.
+- **Payload.** `lessonId`, `groupId`, `teacherId`, `schoolCancellationId`, `status=canceled_by_school`.
+- **Подписчики и последствия.** `subscriptions` фиксирует отмену в `canceled_lessons`, чтобы блокировать дальнейшее списание за занятие. `transfers` учитывает отмену без расходования пользовательского лимита. `attendance` учитывает отмену занятия при обработке отметок. `notifications` сохраняет поручение об отмене.
+- **Порядок.** После фиксации отмены `schedule` отклоняет новые записи и резервы. Пока `subscriptions` не записал отмену в своей схеме, списание ещё может пройти. Активный резерв переноса обрабатывается по протоколу защиты места. [Транзакции и согласованность, § 2.4, 4 и 6](storage/05-transactions-and-consistency.md)
+- **Ошибки.** Сбой обработки проекции требует повтора. Если списание уже зафиксировано, автоматического восстановления права нет. Сигнал для `school_cancellations.completed` / `rightEffect=preserved` в v1 не определён.
+- **Пример.** [LessonCanceledBySchool.json](../../packages/contracts/events/examples/LessonCanceledBySchool.json)
+
+### `BookingConfirmed`
+
+- **Факт и момент записи.** Запись перешла в `confirmed`. В той же транзакции единица уже учтённого резерва переходит в счётчик подтверждённых мест.
+- **Payload.** `bookingId`, `lessonId`, `studentId`, `rightId`, `transferId` (UUID или `null`), `seatStatus=confirmed`.
+- **Подписчики и последствия.** `transfers` получает оба варианта, а шаг переноса учитывает только при заданном `transferId`. При `transferId=null` `subscriptions` связывает право с `bookingId`, а `notifications` сохраняет поручение о подтверждении места.
+- **Порядок.** В обычной записи подтверждение места предшествует асинхронной привязке права. При переносе подтверждение целевого места следует за commit `LessonRightTransferred` у `subscriptions` и предшествует освобождению исходного места. Привязка права уже зафиксирована до подтверждения целевой записи.
+- **Ошибки.** При `409 capacity_exceeded` на приёме обычной записи факт не возникает. Постоянный отказ в привязке права после подтверждения места остаётся открытой границей v1. При временном сбое подтверждения целевой записи после commit координатор повторяет тот же HTTP-шаг с исходным ключом.
+- **Пример.** [BookingConfirmed.json](../../packages/contracts/events/examples/BookingConfirmed.json) (`transferId=null`).
+
+### `BookingCanceled`
+
+- **Факт и момент записи.** `schedule` перевёл запись в `canceled` и освободил учтённое место. Счётчик уменьшается только при переходе из ожидаемого состояния записи.
+- **Payload.** `bookingId`, `lessonId`, `studentId`, `rightId`, `transferId`, `bookingCancellationId`, `cause`, `seatStatus=canceled`. Типы идентификаторов и последствия зависят от `cause`.
+
+| Причина и команда | Идентификаторы | Подписчики и последствия |
+| ----------------- | -------------- | ----------------------- |
+| `ordinary` · `POST /v1/bookings/{bookingId}/cancellations` | `bookingCancellationId` — UUID, `transferId=null` | `subscriptions` снимает привязку только к указанному `bookingId`. `notifications` сохраняет поручение об обычной отмене. |
+| `transfer_source_release` · `POST /internal/v1/bookings/{bookingId}/transfer-releases` | `transferId` — UUID, `bookingCancellationId=null` | `transfers` учитывает освобождение **исходного** подтверждённого места. Право остаётся привязано к целевой записи. Уведомление об итоге идёт по `TransferCompleted`. |
+
+- **Порядок.** При обычной отмене операция ждёт подтверждения эффекта для привязки, контракт этого сигнала открыт. При переносе освобождение источника следует за commit новой привязки и подтверждением целевой записи. Доставка `BookingCanceled` может обогнать доставку `LessonRightTransferred`, поэтому координатор сверяет зафиксированные шаги по `transferId`.
+- **Ошибки.** Повтор команды не уменьшает счётчик второй раз. Поздняя обычная отмена не снимает привязку к другому `bookingId`. Некорректная пара `cause` и идентификаторов отправляется в DLQ как ошибка схемы. Неопределённый результат освобождения источника требует повтора того же HTTP-шага.
+- **Примеры.** [Обычная отмена](../../packages/contracts/events/examples/BookingCanceled.json), [освобождение исходного места](../../packages/contracts/events/examples/BookingCanceled.transfer-source-release.json).
+
+### `TransferSeatReserved`
+
+- **Факт и момент записи.** `POST /internal/v1/lessons/{lessonId}/seat-reservations` зафиксировал активный резерв целевого места и выдал `targetBookingId`. Резерв уже учитывается во вместимости занятия.
+- **Payload.** `seatReservationId`, `lessonId`, `studentId`, `rightId`, `transferId`, `targetBookingId`, `status=active`.
+- **Подписчики и последствия.** `transfers` учитывает целевой резерв в заявке и может перейти к HTTP-шагу новой привязки права.
+- **Порядок.** Резерв места следует за блокировкой права и предшествует commit новой привязки. Истечение `expires_at` служит сигналом для диагностики. Для освобождения целевого резерва до commit требуется подтверждённая компенсация права и проекция `LessonRightReleased` у `schedule`. [Транзакции и согласованность, § 4](storage/05-transactions-and-consistency.md)
+- **Ошибки.** При подтверждённом `409 no_free_seat` резерва и события нет. При `503` или таймауте `transfers` выясняет исход повтором того же шага и `Idempotency-Key`.
+- **Пример.** [TransferSeatReserved.json](../../packages/contracts/events/examples/TransferSeatReserved.json)
 
 ## Посещения публикуют
 
