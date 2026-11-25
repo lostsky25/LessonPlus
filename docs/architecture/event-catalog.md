@@ -145,11 +145,37 @@ HTTP-команды OpenAPI в этот список не входят. Соот
 
 ## Посещения публикуют
 
-| Событие | Проектируемые получатели | Смысл | Пример |
-| ------- | ------------------------ | ----- | ------ |
-| `AttendanceRegistrationRequested` | Абонементы | Запрос списания. Это инициация, ещё не окончательная отметка | [AttendanceRegistrationRequested.json](../../packages/contracts/events/examples/AttendanceRegistrationRequested.json) |
-| `AttendanceRecorded` | Уведомления | Окончательное посещение после `LessonRightConsumed` | [AttendanceRecorded.json](../../packages/contracts/events/examples/AttendanceRecorded.json) |
-| `AbsenceRecorded` | Уведомления | Окончательное отсутствие. Правило списания для отсутствия не задано | [AbsenceRecorded.json](../../packages/contracts/events/examples/AbsenceRecorded.json) |
+Издатель всех трёх типов — `attendance`. Строка outbox записывается вместе с регистрацией или окончательной отметкой. Ключ сущности запроса — `registrationId`, ключ сущности окончательной отметки — `attendanceId`, а бизнес-ключ единственной отметки — `bookingId`. Routing key исходной публикации совпадает с именем карточки.
+
+### `AttendanceRegistrationRequested`
+
+- **Факт и момент записи.** `POST /v1/attendance-registrations` принял запрос и создал регистрацию в статусе `pending`. HTTP возвращает `202 accepted`. Окончательной отметки на этот момент ещё нет.
+- **Payload.** `registrationId`, `bookingId`, `studentId`, `lessonId`, `rightId`, `mark` (`presence` или `absence`), `attendanceId` (схема допускает UUID или `null`, при создании регистрации передаётся `null`).
+- **Подписчики и последствия.** `subscriptions` для `mark=presence` проверяет право и действующую привязку, один раз списывает право и выпускает `LessonRightConsumed`. Правило списания для `mark=absence` в v1 открыто.
+- **Порядок.** Регистрация сохраняется до отправки запроса. Запрос может обогнать обработку обычного `BookingConfirmed` у `subscriptions`. Право в `available` ожидает привязки, а право в `reserved` — исхода переноса. Цепочка присутствия — `AttendanceRegistrationRequested` → `LessonRightConsumed` → `AttendanceRecorded`.
+- **Идемпотентность.** Тот же `Idempotency-Key` возвращает ту же регистрацию. Разные ключи могут создать несколько pending-регистраций одного `bookingId`. У `subscriptions` повтор доставки отсеивается по `event_id`. Один эффект списания обеспечивается уникальностью `(rightId, bookingId)` в журнале и проверкой `studentId` и `lessonId`.
+- **Ошибки.** Если окончательная отметка уже есть, HTTP возвращает `409 attendance_exists` без новой регистрации. При `503` или таймауте клиент повторяет запрос с исходным ключом. У `subscriptions` ожидаемая предпосылка ведёт к откату всей транзакции и отложенному повтору. Доказанный постоянный отказ фиксируется как обработанный без списания. Без подтверждения списания регистрация остаётся `pending`. В v1 отдельный сигнал окончательного отказа списания открыт. [Транзакции и согласованность, § 3.1 и § 3.6](storage/05-transactions-and-consistency.md#31-consume-attendanceregistrationrequested-presence)
+- **Пример.** [AttendanceRegistrationRequested.json](../../packages/contracts/events/examples/AttendanceRegistrationRequested.json)
+
+### `AttendanceRecorded`
+
+- **Факт и момент записи.** После `LessonRightConsumed` сервис зафиксировал окончательную отметку о присутствии. Под блокировкой по `bookingId` он сверяет `registrationId`, `bookingId`, `rightId`, `lessonId` и `studentId`, записывает отметку и обновляет исходную регистрацию. Запись об обработке подтверждения и исходящий факт входят в ту же транзакцию.
+- **Payload.** `attendanceId`, `registrationId`, `bookingId`, `studentId`, `lessonId`, `rightId`, `mark=presence`, `status=recorded`, `rightEffect=consumed`.
+- **Подписчики и последствия.** `notifications` сохраняет поручение об окончательной отметке. Списание к этому моменту уже подтверждено владельцем права.
+- **Порядок.** Подтверждение списания предшествует финализации. При обработке `LessonRightConsumed` источник проверки — локальная регистрация. Другие pending-регистрации того же `bookingId` отклоняются с `attendance_exists` в той же или последующей транзакции под той же блокировкой.
+- **Идемпотентность.** Повтор `LessonRightConsumed` проверяется по его `event_id`. Даже при другом идентификаторе факта уникальность `attendances.booking_id` не позволяет создать вторую отметку. `notifications` учитывает `event_id` итогового факта и уникальность поручения по `(source_event_id, student_id, channel)`.
+- **Ошибки.** Если ещё не видна ожидаемая предпосылка финализации, транзакция откатывается целиком. Повтор идёт через пять ступеней, после их исчерпания сообщение попадает в DLQ. Без подтверждённого результата списания регистрация остаётся `pending`. Дубликат уже зафиксированного результата подтверждается без второй отметки.
+- **Пример.** [AttendanceRecorded.json](../../packages/contracts/events/examples/AttendanceRecorded.json)
+
+### `AbsenceRecorded`
+
+- **Факт и момент записи.** Сервис зафиксировал окончательную отметку об отсутствии. Факт сохраняется вместе с отметкой и обновлением регистрации. В v1 эффект для права имеет значение `unspecified`.
+- **Payload.** `attendanceId`, `registrationId`, `bookingId`, `studentId`, `lessonId`, `rightId`, `mark=absence`, `status=absent`, `rightEffect=unspecified`.
+- **Подписчики и последствия.** `notifications` сохраняет поручение об отсутствии. Подписки на этот факт для списания или восстановления права в каталоге нет.
+- **Порядок.** Запрос регистрации предшествует окончательной отметке. Правило, определяющее эффект отсутствия для права и необходимое подтверждение этого эффекта при финализации, остаётся открытым. Исправление уже сохранённой отметки проходит через отдельную операцию correction.
+- **Идемпотентность.** Действует тот же уникальный ключ `attendances.booking_id`. Две регистрации отсутствия или конкурирующие регистрации присутствия и отсутствия не создают две окончательные отметки. `notifications` учитывает `event_id` и уникальность поручения по `(source_event_id, student_id, channel)`.
+- **Ошибки.** При откате сохранения отметки факт тоже откатывается. Сбой публикации после commit обрабатывается через outbox с тем же `event_id`. Временный сбой у подписчика обрабатывается по [правилам повторов и DLQ](#повторы-dlq-и-восстановление-rabbitmq).
+- **Пример.** [AbsenceRecorded.json](../../packages/contracts/events/examples/AbsenceRecorded.json)
 
 ## Переносы публикуют
 
