@@ -16,17 +16,77 @@ HTTP-команды OpenAPI в этот список не входят. Соот
 
 ## Абонементы публикуют
 
-| Событие | Проектируемые получатели | Смысл | Пример |
-| ------- | ------------------------ | ----- | ------ |
-| `SubscriptionActivated` | Уведомления | Абонемент стал действующим | [SubscriptionActivated.json](../../packages/contracts/events/examples/SubscriptionActivated.json) |
-| `SubscriptionExpired` | Уведомления, Переносы | Абонемент завершён; новую заявку на его права принимать нельзя | [SubscriptionExpired.json](../../packages/contracts/events/examples/SubscriptionExpired.json) |
-| `LessonRightReserved` | Переносы | Блокировка неиспользованного права. В переносе это первый шаг; «Расписание» получателем блокировки права не является. До новой привязки блокировку можно снять | [LessonRightReserved.json](../../packages/contracts/events/examples/LessonRightReserved.json) |
-| `LessonRightReleased` | Переносы, Расписание | Снятие блокировки права при компенсации; у schedule — проекция `compensated_right_releases` для безопасного release hold | [LessonRightReleased.json](../../packages/contracts/events/examples/LessonRightReleased.json) |
-| `LessonRightConsumed` | Посещения, Уведомления | Списание подтверждено. Посещения после этого фиксируют окончательный результат | [LessonRightConsumed.json](../../packages/contracts/events/examples/LessonRightConsumed.json) |
-| `LessonRightRestored` | Посещения, Уведомления | Списанное право возвращено в остаток | [LessonRightRestored.json](../../packages/contracts/events/examples/LessonRightRestored.json) |
-| `LessonRightTransferred` | Переносы, Расписание | Новая привязка права зафиксирована (commit у абонементов). Перенос доводят до конца, компенсация запрещена. Событие само по себе не защищает целевой резерв от TTL | [LessonRightTransferred.json](../../packages/contracts/events/examples/LessonRightTransferred.json) |
+Издатель всех семи типов — `subscriptions`. Строка outbox записывается в одной транзакции с изменением абонемента или права. Ключ сущности берётся из `subscriptionId` для событий абонемента и из `rightId` для событий права. Routing key исходной публикации совпадает с именем карточки. Для всех получателей действуют [общие правила повторов и DLQ](#повторы-dlq-и-восстановление-rabbitmq).
 
-Только «Абонементы» выпускают события резерва, списания, восстановления и перепривязки права.
+### `SubscriptionActivated`
+
+- **Факт и момент записи.** `POST /v1/subscriptions` создал действующий абонемент и права в количестве, заданном тарифом. Каждое новое право имеет статус `available`.
+- **Payload.** `subscriptionId`, `studentId`, `tariffId`, `status=active`, `activatedAt`, `expiresAt`.
+- **Подписчики и последствия.** `notifications` сохраняет поручение об активации для `studentId`.
+- **Порядок.** Активация и создание прав предшествуют их использованию и истечению абонемента. Уведомления получают самостоятельный факт об активации. Повтор доставки может изменить порядок фактов об одном абонементе.
+- **Идемпотентность.** Повтор той же HTTP-команды с тем же `Idempotency-Key` возвращает сохранённый результат без повторного создания прав. Получатель учитывает `event_id` и уникальность поручения по `(source_event_id, student_id, channel)`.
+- **Ошибки.** При подтверждённом отказе активации событие отсутствует. После таймаута клиент повторяет команду с исходным ключом. Сбой у получателя обрабатывается в его очереди.
+- **Пример.** [SubscriptionActivated.json](../../packages/contracts/events/examples/SubscriptionActivated.json)
+
+### `SubscriptionExpired`
+
+- **Факт и момент записи.** Владелец зафиксировал переход абонемента из `active` в `expired` по окончании периода. Источник запуска проверки срока в v1 открыт, внешней HTTP-команды истечения нет.
+- **Payload.** `subscriptionId`, `studentId`, `tariffId`, `status=expired`, `expiredAt`.
+- **Подписчики и последствия.** `notifications` сохраняет поручение об истечении. `transfers` учитывает истечение при приёме новых заявок на права этого абонемента.
+- **Порядок.** Истечение фиксируется после активации. Для новых привязок и резервов действует окно абонемента у владельца. Уже начатый перенос доводится или компенсируется по состоянию процесса и с учётом границы commit новой привязки.
+- **Идемпотентность.** Переход `active → expired` для одного `subscriptionId` выполняется один раз. Получатели учитывают `event_id`, а повтор подтверждённого истечения не меняет состояние уже завершённого переноса.
+- **Ошибки.** При откате перехода outbox тоже откатывается. Временный сбой обработки повторяется в очереди получателя. Задержка доставки факта не продлевает окно у владельца.
+- **Пример.** [SubscriptionExpired.json](../../packages/contracts/events/examples/SubscriptionExpired.json)
+
+### `LessonRightReserved`
+
+- **Факт и момент записи.** `POST /internal/v1/rights/{rightId}/reservations` создал активный резерв для `transferId` и перевёл право из `bound` в `reserved`. Исходная запись известна по `sourceBookingId`.
+- **Payload.** `rightId`, `subscriptionId`, `studentId`, `transferId`, `reservationId`, `sourceBookingId`, `status=reserved`.
+- **Подписчики и последствия.** `transfers` учитывает блокировку и продолжает перенос отдельной HTTP-командой резерва места. У `schedule` входным фактом компенсации служит `LessonRightReleased`.
+- **Порядок.** Исходное право связано с исходной записью перед резервированием. Резерв права предшествует резерву целевого места и commit новой привязки. Поздний факт резерва сверяется с текущим шагом заявки.
+- **Идемпотентность.** У права может быть один активный резерв, у `transferId` — одна запись резерва права за весь процесс. Повтор HTTP использует ключ исходного шага. Координатор учитывает `event_id` и сохранённое состояние заявки.
+- **Ошибки.** Подтверждённый `409 right_consumed` или `right_not_available` завершает шаг отказом без события резерва. При таймауте или `503` координатор выясняет исход повтором того же шага с тем же ключом.
+- **Пример.** [LessonRightReserved.json](../../packages/contracts/events/examples/LessonRightReserved.json)
+
+### `LessonRightReleased`
+
+- **Факт и момент записи.** `POST /internal/v1/rights/{rightId}/reservations/{reservationId}/releases` снял активный резерв до commit новой привязки. Право снова имеет статус `bound`, а `bookingId` равен `sourceBookingId`.
+- **Payload.** `rightId`, `subscriptionId`, `studentId`, `transferId`, `reservationId`, `sourceBookingId`, `bookingId`, `status=bound`, `reservationStatus=released`.
+- **Подписчики и последствия.** `transfers` учитывает снятие резерва. `schedule` записывает `compensated_right_releases` в одной транзакции с `processed_events`. Для освобождения целевого места он сверяет проекцию с резервом по `transferId`, `rightId` и `studentId`, а также проверяет связь резерва с целевой записью.
+- **Порядок.** Сначала снимается резерв права. Когда целевой резерв существует, его освобождают после фиксации проекции у `schedule`. Если факт пришёл первым, проекция блокирует создание позднего целевого резерва для той же заявки. [Транзакции и согласованность, § 4.3](storage/05-transactions-and-consistency.md#43-проекция-compensated_right_releases-schedule)
+- **Идемпотентность.** Повтор команды с тем же ключом возвращает результат того же шага. Получатели учитывают `event_id`. В проекции одна строка на `transferId` и резерв права. Повторное освобождение места не уменьшает счётчик.
+- **Ошибки.** После commit перепривязки освобождение права возвращает `409 binding_fixed`. При неизвестном исходе перепривязки координатор выясняет исход с исходным ключом шага. При отсутствии проекции `schedule` откладывает освобождение, а координатор повторяет запрос с тем же ключом при `503`.
+- **Пример.** [LessonRightReleased.json](../../packages/contracts/events/examples/LessonRightReleased.json)
+
+### `LessonRightConsumed`
+
+- **Факт и момент записи.** При обработке `AttendanceRegistrationRequested` с `mark=presence` владелец сверил право, ученика, занятие и действующую привязку к записи. После проверки отмены занятия он перевёл право из `bound` в `consumed` и записал списание в журнал.
+- **Payload.** `rightId`, `subscriptionId`, `studentId`, `bookingId`, `lessonId`, `registrationId`, `status=consumed`, `rightEffect=consumed`.
+- **Подписчики и последствия.** `attendance` сверяет подтверждение с регистрацией и фиксирует посещение. `notifications` сохраняет поручение о списании.
+- **Порядок.** Исходная регистрация сохраняется до публикации запроса. Списание возможно после привязки права и предшествует финализации отметки о присутствии. При конкуренции с переносом результат определяет состояние права под блокировкой. [Транзакции и согласованность, § 3.1](storage/05-transactions-and-consistency.md#31-consume-attendanceregistrationrequested-presence)
+- **Идемпотентность.** Запись входного `event_id`, списание и outbox атомарны. Журнал допускает одно списание на `(rightId, bookingId)` даже при другом `registrationId` и `event_id` запроса. У `attendance` одна окончательная отметка на `bookingId`. Остаток не становится отрицательным.
+- **Ошибки.** Ожидание привязки или резерв права дают временную ошибку. Доказанный постоянный отказ, включая списанное право, привязку к другой записи или уже учтённую отмену занятия, подтверждается без нового списания и без `LessonRightConsumed`. Ожидаемая предпосылка финализации у получателя ведёт к отложенному повтору.
+- **Пример.** [LessonRightConsumed.json](../../packages/contracts/events/examples/LessonRightConsumed.json)
+
+### `LessonRightRestored`
+
+- **Факт и момент записи.** Владелец подтвердил возврат ранее списанного права при исправлении отметки. В одной транзакции он записал возврат со ссылкой на исходное списание и вернул праву статус `bound` с той же записью.
+- **Payload.** `rightId`, `subscriptionId`, `studentId`, `bookingId`, `lessonId`, `consumedRegistrationId`, `attendanceCorrectionId`, `status=bound`.
+- **Подписчики и последствия.** `attendance` учитывает подтверждённый возврат в соответствующем исправлении. `notifications` сохраняет поручение о возврате.
+- **Порядок.** Возврат ссылается на уже зафиксированное списание. `consumedRegistrationId` соответствует `registrationId` исходного `LessonRightConsumed`. Исправление финализируется после подтверждённого исхода. Транспорт запроса на восстановление из `attendance` в `subscriptions` открыт в v1. [Транзакции и согласованность, § 3.7](storage/05-transactions-and-consistency.md#37-correction--restore)
+- **Идемпотентность.** В журнале один возврат на исходную операцию списания. Другой `attendanceCorrectionId` или `event_id` не возвращает право повторно. Получатели учитывают `event_id` и сверяют факт с исходным списанием и исправлением.
+- **Ошибки.** При расхождении идентификаторов с журналом владелец не фиксирует возврат. При откате транзакции факт отсутствует. Временный сбой сопоставления у получателя повторяется по правилам очереди, если необходимая предпосылка ещё может появиться. Смена отметки на отсутствие сама по себе не задаёт возврат.
+- **Пример.** [LessonRightRestored.json](../../packages/contracts/events/examples/LessonRightRestored.json)
+
+### `LessonRightTransferred`
+
+- **Факт и момент записи.** `POST /internal/v1/rights/{rightId}/rebindings` зафиксировал новую привязку права к `targetBookingId`. Право перешло в `bound`, а резерв права закрыт с результатом `converted`.
+- **Payload.** `rightId`, `subscriptionId`, `studentId`, `transferId`, `reservationId`, `sourceBookingId`, `targetBookingId`, `status=bound`.
+- **Подписчики и последствия.** `transfers` фиксирует знание о commit и доводит перенос. `schedule` учитывает факт для наблюдаемости. Целевой резерв защищает протокол удержания места, описанный в проекте хранения. [Транзакции и согласованность, § 4](storage/05-transactions-and-consistency.md#4-перенос-commit-компенсация-защита-hold)
+- **Порядок.** Commit следует за резервом права и места. Затем подтверждают целевую запись и освобождают исходное место. Координатор опирается на сохранённые результаты шагов, поскольку связанный факт может прийти позже других событий переноса.
+- **Идемпотентность.** Владелец перепривязывает право только по тому же активному резерву и сохраняет результат по ключу HTTP-шага. `transfers` учитывает `event_id` и фиксирует `committed` без понижения уже подтверждённого состояния.
+- **Ошибки.** При таймауте перепривязки координатор повторяет запрос с исходным ключом. До выяснения исхода освобождение резервов и отклонение заявки запрещены. После commit временный сбой требует доведения подтверждения целевого места и освобождения исходного.
+- **Пример.** [LessonRightTransferred.json](../../packages/contracts/events/examples/LessonRightTransferred.json)
 
 ## Расписание публикует
 
