@@ -13,6 +13,7 @@ import { RabbitMqService } from './infrastructure/messaging/rabbitmq.service.js'
 import { PrismaOutboxEventStore } from './infrastructure/prisma/prisma-outbox-event.store.js';
 import { PrismaProcessedEventStore } from './infrastructure/prisma/prisma-processed-event.store.js';
 import { PrismaService } from './infrastructure/prisma/prisma.service.js';
+import { PrismaSubscriptionActivationStore } from './infrastructure/prisma/prisma-subscription-activation.store.js';
 import { HealthController } from './presentation/health.controller.js';
 
 @Module({})
@@ -30,9 +31,12 @@ export class AppModule {
         },
         {
           provide: RabbitMqService,
-          useFactory: (serviceConfig: BusinessServiceConfig) =>
-            new RabbitMqService(serviceConfig.rabbitMqUrl),
-          inject: [SERVICE_CONFIG],
+          useFactory: (serviceConfig: BusinessServiceConfig, prisma: PrismaService) =>
+            new RabbitMqService(
+              serviceConfig.rabbitMqUrl,
+              new PrismaSubscriptionActivationStore(prisma),
+            ),
+          inject: [SERVICE_CONFIG, PrismaService],
         },
         { provide: DATABASE_PROBE, useExisting: PrismaService },
         { provide: MESSAGE_BROKER_PROBE, useExisting: RabbitMqService },

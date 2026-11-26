@@ -29,7 +29,7 @@ export async function bootstrap(options: ServiceBootstrapOptions): Promise<void>
   const swaggerConfig = new DocumentBuilder()
     .setTitle(options.swaggerTitle)
     .setDescription(
-      'Каркас сервиса. Бизнес-сценарии, диспетчер outbox и потребители событий на этом этапе не реализованы.',
+      'Сервис создаёт поручения по SubscriptionActivated. Доставка уведомлений и диспетчер outbox пока не реализованы.',
     )
     .setVersion('0.1.0')
     .build();

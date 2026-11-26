@@ -32,3 +32,19 @@ model ProcessedEvent {
   @@map("processed_events")
   @@schema("notifications")
 }
+
+model Notification {
+  id            String   @id @db.Uuid
+  studentId     String   @map("student_id") @db.Uuid
+  subjectType   String   @map("subject_type")
+  subjectId     String   @map("subject_id") @db.Uuid
+  sourceEventId String   @map("source_event_id") @db.Uuid
+  status        String
+  channel       String
+  recordedAt    DateTime @map("recorded_at") @db.Timestamptz(6)
+  nextAttemptNo Int      @default(1) @map("next_attempt_no")
+
+  @@unique([sourceEventId, studentId, channel])
+  @@map("notifications")
+  @@schema("notifications")
+}
